@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: garmin-fit-cron
+  namespace: garmin-fit-downloader
+spec:
+  schedule: "0 */6 * * *"  # every 6 hours
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: downloader
+              image: franchyze923/garmin-fit-downloader:1.0.1
+              imagePullPolicy: Always
+              envFrom:
+                - secretRef:
+                    name: garmin-connect-credentials
+              env:
+                - name: OUTPUT_DIR
+                  value: /data/fits
+                - name: COUNT
+                  value: "50"
+                - name: SINCE_DAYS
+                  value: "30"
+                - name: GARTH_HOME
+                  value: /state/.garth
+              volumeMounts:
+                - name: nas
+                  mountPath: /data
+                  subPath: fits
+                - name: nas
+                  mountPath: /state
+                  subPath: state
+          volumes:
+            - name: nas
+              persistentVolumeClaim:
+                claimName: garmin-nfs-pvc
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garmin-nfs-pvc
+  namespace: garmin-fit-downloader
+spec:
+  storageClassName: nfs-csi         # <-- your default StorageClass
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi

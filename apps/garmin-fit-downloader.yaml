@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: garmin-fit-downloader
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/franchyze923/app-of-apps-demo.git
+    targetRevision: main
+    path: workloads/garmin-fit-downloader
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: garmin-fit-downloader
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
