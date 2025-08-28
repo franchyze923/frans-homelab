@@ -1,56 +1,61 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: garmin-fit-cron
-  namespace: garmin-fit-downloader
+  name: garmin-fit-to-shp
+  namespace: garmin-fit
 spec:
-  schedule: "0 */6 * * *"  # every 6 hours
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
+  # Run at 2:30 AM and 2:30 PM every day
+  schedule: "30 2,14 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
   jobTemplate:
     spec:
+      backoffLimit: 2
       template:
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
           containers:
-            - name: downloader
-              image: franchyze923/garmin-fit-downloader:1.0.1
-              imagePullPolicy: Always
+            - name: app
+              image: franchyze923/garmin-fit-downloader:2.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - "--since-days"
+                - "30"
+                - "--fit-dir"
+                - "/data/garmin_fits"
+                - "--token-dir"
+                - "/data/.garminconnect"
               envFrom:
                 - secretRef:
                     name: garmin-connect-credentials
-              env:
-                - name: OUTPUT_DIR
-                  value: /data/fits
-                - name: COUNT
-                  value: "50"
-                - name: SINCE_DAYS
-                  value: "30"
-                - name: GARTH_HOME
-                  value: /state/.garth
               volumeMounts:
-                - name: nas
+                - name: data
                   mountPath: /data
-                  subPath: fits
-                - name: nas
-                  mountPath: /state
-                  subPath: state
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1"
+                  memory: "1Gi"
           volumes:
-            - name: nas
+            - name: data
               persistentVolumeClaim:
-                claimName: garmin-nfs-pvc
-
----
+                claimName: garmin-fit-nfs
 
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: garmin-nfs-pvc
-  namespace: garmin-fit-downloader
+  name: garmin-fit-nfs
+  namespace: garmin-fit
 spec:
-  storageClassName: nfs-csi         # <-- your default StorageClass
-  accessModes:
-    - ReadWriteMany
+  accessModes: ["ReadWriteMany"]
+  storageClassName: nfs-csi
   resources:
     requests:
-      storage: 100Gi
+      storage: 50Gi
