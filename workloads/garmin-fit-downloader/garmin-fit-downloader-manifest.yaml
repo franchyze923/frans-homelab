@@ -4,8 +4,8 @@ metadata:
   name: garmin-fit-to-shp
   namespace: garmin-fit
 spec:
-  # Run at 2:30 AM and 2:30 PM every day
-  schedule: "30 2,14 * * *"
+  # Run every 2 hours
+  schedule: "0 */2 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 5
