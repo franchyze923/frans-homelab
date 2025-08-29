@@ -5,7 +5,7 @@ metadata:
   namespace: garmin-fit
 spec:
   # Run every 2 hours
-  schedule: "0 */2 * * *"
+  schedule: "0 */6 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 5
