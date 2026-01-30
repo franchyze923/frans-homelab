@@ -3,18 +3,6 @@ kind: Namespace
 metadata:
   name: gitea
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: gitea-data
-  namespace: gitea
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,8 +29,6 @@ spec:
           env:
             - name: GITEA__database__DB_TYPE
               value: sqlite3
-            - name: GITEA__server__ROOT_URL
-              value: http://localhost:3000
           volumeMounts:
             - name: data
               mountPath: /data
@@ -55,8 +41,9 @@ spec:
               cpu: "500m"
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: gitea-data
+          hostPath:
+            path: /var/lib/gitea
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
