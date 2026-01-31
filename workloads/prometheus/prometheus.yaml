@@ -63,6 +63,20 @@ data:
         static_configs:
           - targets: ['localhost:9090']
 
+      # Node Exporter (runs on each node via hostNetwork)
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__address__]
+            regex: '(.*):.*'
+            replacement: '${1}:9100'
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+
       # Kubernetes API server
       - job_name: 'kubernetes-apiservers'
         kubernetes_sd_configs:
