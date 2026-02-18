@@ -13,9 +13,6 @@ spec:
       valuesObject:
         service:
           type: LoadBalancer
-          ports:
-            server: 8089
-            ui: 8088
   destination:
     server: https://kubernetes.default.svc
     namespace: b0k3ts
