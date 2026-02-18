@@ -77,7 +77,8 @@ metadata:
   labels:
     app: headlamp
   annotations:
-    io.cilium/lb-ipam-sharing-key: "platform"
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
   type: LoadBalancer
   selector:
