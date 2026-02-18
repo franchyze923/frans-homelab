@@ -194,6 +194,8 @@ kind: Service
 metadata:
   name: kibana
   namespace: elk
+  annotations:
+    io.cilium/lb-ipam-sharing-key: "platform"
 spec:
   type: LoadBalancer
   selector:

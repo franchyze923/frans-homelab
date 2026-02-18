@@ -83,10 +83,12 @@ kind: Service
 metadata:
   name: nginx
   namespace: demo2
+  annotations:
+    io.cilium/lb-ipam-sharing-key: "apps"
 spec:
   type: LoadBalancer
   selector:
     app: nginx
   ports:
-    - port: 80
+    - port: 8082
       targetPort: 80

@@ -79,6 +79,8 @@ kind: Service
 metadata:
   name: keycloak
   namespace: keycloak
+  annotations:
+    io.cilium/lb-ipam-sharing-key: "platform"
 spec:
   type: LoadBalancer
   selector:

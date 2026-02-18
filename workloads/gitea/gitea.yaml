@@ -50,6 +50,8 @@ kind: Service
 metadata:
   name: gitea
   namespace: gitea
+  annotations:
+    io.cilium/lb-ipam-sharing-key: "apps"
 spec:
   type: LoadBalancer
   selector:
