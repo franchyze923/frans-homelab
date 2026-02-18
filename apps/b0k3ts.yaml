@@ -9,6 +9,10 @@ spec:
     repoURL: https://github.com/jfelixfalcon/b0k3ts.git
     targetRevision: main
     path: charts/b0k3ts
+    helm:
+      valuesObject:
+        service:
+          type: LoadBalancer
   destination:
     server: https://kubernetes.default.svc
     namespace: b0k3ts
