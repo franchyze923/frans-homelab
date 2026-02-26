@@ -81,4 +81,3 @@ spec:
   tls:
   - hosts:
     - home.franpolignano.com
-    secretName: franpolignano-wildcard-tls
