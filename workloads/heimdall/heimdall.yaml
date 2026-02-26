@@ -40,6 +40,14 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          hostPath:
+            path: /opt/heimdall/config
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
