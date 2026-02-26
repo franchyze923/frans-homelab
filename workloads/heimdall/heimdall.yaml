@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: heimdall
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall
+  namespace: heimdall
+  labels:
+    app: heimdall
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heimdall
+  template:
+    metadata:
+      labels:
+        app: heimdall
+    spec:
+      containers:
+        - name: heimdall
+          image: lscr.io/linuxserver/heimdall:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heimdall
+  namespace: heimdall
+  labels:
+    app: heimdall
+spec:
+  type: ClusterIP
+  selector:
+    app: heimdall
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: heimdall-ingress
+  namespace: heimdall
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: home.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: heimdall
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - home.franpolignano.com
+    secretName: franpolignano-wildcard-tls
