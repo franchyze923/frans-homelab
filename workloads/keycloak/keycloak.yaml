@@ -89,6 +89,10 @@ spec:
                 secretKeyRef:
                   name: keycloak-admin
                   key: password
+            - name: KC_PROXY
+              value: "edge"
+            - name: KC_HOSTNAME
+              value: "keycloak.franpolignano.com"
           volumeMounts:
             - name: data
               mountPath: /opt/keycloak/data
@@ -104,19 +108,41 @@ spec:
           persistentVolumeClaim:
             claimName: keycloak-data
 ---
-# Service with LoadBalancer
+# Service
 apiVersion: v1
 kind: Service
 metadata:
   name: keycloak
   namespace: keycloak
-  annotations:
-    lbipam.cilium.io/sharing-key: "platform"
-    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: keycloak
   ports:
     - port: 8080
       targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: keycloak
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: keycloak.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - keycloak.franpolignano.com
