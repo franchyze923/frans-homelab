@@ -93,10 +93,12 @@ spec:
                 secretKeyRef:
                   name: keycloak-admin
                   key: password
-            - name: KC_PROXY
-              value: "edge"
+            - name: KC_PROXY_HEADERS
+              value: "xforwarded"
             - name: KC_HOSTNAME
               value: "keycloak.franpolignano.com"
+            - name: KC_HTTP_ENABLED
+              value: "true"
           volumeMounts:
             - name: data
               mountPath: /opt/keycloak/data
