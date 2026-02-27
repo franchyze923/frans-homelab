@@ -4,6 +4,24 @@ metadata:
   name: heimdall
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: heimdall-config-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/heimdall
+  claimRef:
+    name: heimdall-config
+    namespace: heimdall
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: heimdall-config
@@ -11,7 +29,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: nfs-client
+  storageClassName: ""
+  volumeName: heimdall-config-pv
   resources:
     requests:
       storage: 1Gi
