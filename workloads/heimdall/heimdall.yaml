@@ -14,6 +14,10 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/heimdall
