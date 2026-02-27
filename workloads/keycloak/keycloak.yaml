@@ -3,6 +3,38 @@ kind: Namespace
 metadata:
   name: keycloak
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: keycloak-data-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/keycloak
+  claimRef:
+    name: keycloak-data
+    namespace: keycloak
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: keycloak-data-pv
+  resources:
+    requests:
+      storage: 2Gi
+---
 # Secret for admin credentials
 apiVersion: v1
 kind: Secret
@@ -33,7 +65,7 @@ spec:
       initContainers:
         - name: fix-permissions
           image: busybox:latest
-          command: ['sh', '-c', 'chown -R 1000:1000 /data']
+          command: ['sh', '-c', 'chown -R 1000:1000 /data || true']
           volumeMounts:
             - name: data
               mountPath: /data
@@ -69,9 +101,8 @@ spec:
               cpu: "1000m"
       volumes:
         - name: data
-          hostPath:
-            path: /opt/keycloak/data
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: keycloak-data
 ---
 # Service with LoadBalancer
 apiVersion: v1
