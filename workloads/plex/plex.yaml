@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plex
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-config-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/plex
+  claimRef:
+    name: plex-config
+    namespace: plex
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config
+  namespace: plex
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: plex-config-pv
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  namespace: plex
+  labels:
+    app: plex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      containers:
+        - name: plex
+          image: lscr.io/linuxserver/plex:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+            - name: VERSION
+              value: "docker"
+          ports:
+            - containerPort: 32400
+              name: http
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: plex-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex
+  namespace: plex
+  labels:
+    app: plex
+spec:
+  type: ClusterIP
+  selector:
+    app: plex
+  ports:
+    - port: 32400
+      targetPort: 32400
+      protocol: TCP
+      name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plex-ingress
+  namespace: plex
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: plex.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plex
+            port:
+              number: 32400
+  tls:
+  - hosts:
+    - plex.franpolignano.com
