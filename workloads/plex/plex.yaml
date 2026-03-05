@@ -39,6 +39,42 @@ spec:
     requests:
       storage: 20Gi
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-media-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia
+  claimRef:
+    name: plex-media
+    namespace: plex
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-media
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-media-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -81,10 +117,16 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: media
+              mountPath: /media
+              readOnly: true
       volumes:
         - name: config
           persistentVolumeClaim:
             claimName: plex-config
+        - name: media
+          persistentVolumeClaim:
+            claimName: plex-media
 ---
 apiVersion: v1
 kind: Service
