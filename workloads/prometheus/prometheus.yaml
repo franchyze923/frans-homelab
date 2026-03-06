@@ -223,7 +223,6 @@ spec:
         - name: storage
           emptyDir: {}
 ---
-# Prometheus Service with LoadBalancer
 apiVersion: v1
 kind: Service
 metadata:
@@ -232,12 +231,34 @@ metadata:
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9090"
-    lbipam.cilium.io/sharing-key: "platform"
-    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: prometheus
   ports:
     - port: 9090
       targetPort: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus-ingress
+  namespace: monitoring
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: prometheus.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+  tls:
+  - hosts:
+    - prometheus.franpolignano.com
