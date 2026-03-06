@@ -153,6 +153,26 @@ spec:
       protocol: TCP
       name: http
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex-lb
+  namespace: plex
+  labels:
+    app: plex
+  annotations:
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
+spec:
+  type: LoadBalancer
+  selector:
+    app: plex
+  ports:
+    - port: 32400
+      targetPort: 32400
+      protocol: TCP
+      name: plex
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
