@@ -3,6 +3,42 @@ kind: Namespace
 metadata:
   name: elk
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: elasticsearch-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/elasticsearch
+  claimRef:
+    name: elasticsearch-storage
+    namespace: elk
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-storage
+  namespace: elk
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: elasticsearch-pv
+  resources:
+    requests:
+      storage: 20Gi
+---
 # Elasticsearch
 apiVersion: apps/v1
 kind: Deployment
@@ -55,9 +91,8 @@ spec:
               cpu: "1000m"
       volumes:
         - name: data
-          hostPath:
-            path: /var/lib/elasticsearch
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: elasticsearch-storage
 ---
 apiVersion: v1
 kind: Service

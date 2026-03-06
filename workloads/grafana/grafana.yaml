@@ -1,5 +1,41 @@
 # Grafana uses the monitoring namespace created by Prometheus
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: grafana-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/grafana
+  claimRef:
+    name: grafana-storage
+    namespace: monitoring
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: grafana-pv
+  resources:
+    requests:
+      storage: 2Gi
+---
 # Grafana Datasource ConfigMap (Prometheus pre-configured)
 apiVersion: v1
 kind: ConfigMap
@@ -353,7 +389,8 @@ spec:
           configMap:
             name: grafana-dashboards
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: grafana-storage
 ---
 apiVersion: v1
 kind: Service
