@@ -50,17 +50,52 @@ kind: Service
 metadata:
   name: gitea
   namespace: gitea
-  annotations:
-    lbipam.cilium.io/sharing-key: "apps"
-    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: gitea
   ports:
     - name: http
       port: 3000
       targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-ssh
+  namespace: gitea
+  annotations:
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
+spec:
+  type: LoadBalancer
+  selector:
+    app: gitea
+  ports:
     - name: ssh
       port: 22
       targetPort: 22
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitea-ingress
+  namespace: gitea
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: gitea.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gitea
+            port:
+              number: 3000
+  tls:
+  - hosts:
+    - gitea.franpolignano.com
