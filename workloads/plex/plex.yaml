@@ -117,11 +117,11 @@ spec:
               name: http
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "1Gi"
+              cpu: "1000m"
             limits:
-              memory: "4Gi"
-              cpu: "2000m"
+              memory: "12Gi"
+              cpu: "6000m"
           volumeMounts:
             - name: config
               mountPath: /config
