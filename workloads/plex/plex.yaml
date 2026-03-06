@@ -92,6 +92,14 @@ spec:
       labels:
         app: plex
     spec:
+      initContainers:
+        - name: wait-for-media
+          image: busybox:latest
+          command: ['sh', '-c', 'until ls /media > /dev/null 2>&1; do echo "Waiting for media NFS mount..."; sleep 2; done; echo "Media mount ready."']
+          volumeMounts:
+            - name: media
+              mountPath: /media
+              readOnly: true
       containers:
         - name: plex
           image: lscr.io/linuxserver/plex:latest
