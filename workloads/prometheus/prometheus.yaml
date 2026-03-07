@@ -212,6 +212,69 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             action: replace
             target_label: kubernetes_pod_name
+
+      # Weight dashboard body composition metrics
+      - job_name: 'weight-dashboard'
+        static_configs:
+          - targets: ['weight-exporter.monitoring.svc.cluster.local:9101']
+            labels:
+              alias: 'body-composition'
+---
+# Weight Exporter Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weight-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weight-exporter
+  template:
+    metadata:
+      labels:
+        app: weight-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9101"
+    spec:
+      containers:
+        - name: weight-exporter
+          image: ghcr.io/franchyze923/weight-exporter:latest
+          ports:
+            - containerPort: 9101
+          env:
+            - name: WEIGHT_API_URL
+              value: "http://192.168.40.13:5000/api/weights"
+            - name: EXPORTER_PORT
+              value: "9101"
+            - name: SCRAPE_INTERVAL
+              value: "1800"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weight-exporter
+  namespace: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9101"
+spec:
+  type: ClusterIP
+  selector:
+    app: weight-exporter
+  ports:
+    - port: 9101
+      targetPort: 9101
+      name: metrics
 ---
 # Prometheus Deployment
 apiVersion: apps/v1
