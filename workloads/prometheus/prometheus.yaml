@@ -233,7 +233,7 @@ spec:
     spec:
       containers:
         - name: weight-exporter
-          image: ghcr.io/franchyze923/weight-exporter:latest
+          image: franchyze923/weight-exporter:latest
           ports:
             - containerPort: 9101
           env:
