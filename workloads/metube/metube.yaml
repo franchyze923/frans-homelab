@@ -20,7 +20,7 @@ spec:
     - retrans=3
   nfs:
     server: 192.168.40.116
-    path: /mnt/user/FranData/FranMedia/Completed_dls
+    path: /mnt/user/FranData/FranMedia/metube_youtube_downloader
   claimRef:
     name: metube-downloads
     namespace: metube
@@ -97,14 +97,16 @@ spec:
             - containerPort: 8081
           env:
             - name: DOWNLOAD_DIR
-              value: /downloads
+              value: /media/videos
+            - name: AUDIO_DOWNLOAD_DIR
+              value: /media/music
             - name: STATE_DIR
               value: /config
           volumeMounts:
             - name: config
               mountPath: /config
             - name: downloads
-              mountPath: /downloads
+              mountPath: /media
           resources:
             requests:
               memory: "128Mi"
