@@ -1,0 +1,158 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: metube-downloads-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia/Completed_dls
+  claimRef:
+    name: metube-downloads
+    namespace: metube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metube-downloads
+  namespace: metube
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: metube-downloads-pv
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: metube-config-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - soft
+    - timeo=30
+    - retrans=3
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/metube
+  claimRef:
+    name: metube-config
+    namespace: metube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metube-config
+  namespace: metube
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: metube-config-pv
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metube
+  namespace: metube
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metube
+  template:
+    metadata:
+      labels:
+        app: metube
+    spec:
+      containers:
+        - name: metube
+          image: ghcr.io/alexta69/metube:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: DOWNLOAD_DIR
+              value: /downloads
+            - name: STATE_DIR
+              value: /config
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: metube-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: metube-downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metube
+  namespace: metube
+spec:
+  type: ClusterIP
+  selector:
+    app: metube
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: metube-ingress
+  namespace: metube
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: metube.franpolignano.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: metube
+            port:
+              number: 8081
+  tls:
+  - hosts:
+    - metube.franpolignano.com
