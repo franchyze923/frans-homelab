@@ -101,7 +101,7 @@ spec:
             - name: AUDIO_DOWNLOAD_DIR
               value: /media/music
             - name: DOWNLOAD_DIRS
-              value: '[{"name":"Videos","path":"/media/videos"},{"name":"Music","path":"/media/music"}]'
+              value: '[{"title":"Videos","path":"/media/videos"},{"title":"Music","path":"/media/music"}]'
             - name: STATE_DIR
               value: /config
           volumeMounts:
