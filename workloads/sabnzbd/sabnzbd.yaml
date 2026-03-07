@@ -21,9 +21,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/sabnzbd
-  claimRef:
-    name: sabnzbd-config
-    namespace: sabnzbd
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -57,9 +54,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia/Completed_dls
-  claimRef:
-    name: sabnzbd-downloads
-    namespace: sabnzbd
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

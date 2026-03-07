@@ -21,9 +21,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/sonarr
-  claimRef:
-    name: sonarr-config
-    namespace: sonarr
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -57,9 +54,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia/TV_Shows
-  claimRef:
-    name: sonarr-tv
-    namespace: sonarr
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -93,9 +87,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia/Completed_dls
-  claimRef:
-    name: sonarr-downloads
-    namespace: sonarr
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

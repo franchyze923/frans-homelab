@@ -21,9 +21,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia/metube_youtube_downloader
-  claimRef:
-    name: metube-downloads
-    namespace: metube
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -57,9 +54,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/metube
-  claimRef:
-    name: metube-config
-    namespace: metube
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

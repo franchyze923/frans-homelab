@@ -21,9 +21,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/tautulli
-  claimRef:
-    name: tautulli-config
-    namespace: tautulli
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

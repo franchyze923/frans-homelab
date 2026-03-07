@@ -21,9 +21,6 @@ spec:
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/keycloak
-  claimRef:
-    name: keycloak-data
-    namespace: keycloak
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
