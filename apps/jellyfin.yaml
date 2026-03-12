@@ -1,23 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: b0k3ts
+  name: jellyfin
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: https://github.com/jfelixfalcon/b0k3ts.git
+    repoURL: https://github.com/franchyze923/app-of-apps-demo.git
     targetRevision: main
-    path: charts/b0k3ts
-    helm:
-      valuesObject:
-        service:
-          type: NodePort
+    path: workloads/jellyfin
   destination:
     server: https://kubernetes.default.svc
-    namespace: b0k3ts
+    namespace: jellyfin
   syncPolicy:
     automated:
       prune: true
