@@ -175,7 +175,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(ls -A /config 2>/dev/null)" ] && [ -d /config-backup/Library ]; then echo "Ceph volume empty, restoring from NFS backup..."; cp -a /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup found, skipping restore."; fi']
+          command: ['sh', '-c', 'if [ ! -d /config/Library ] && [ -d /config-backup/Library ]; then echo "No Plex config found, restoring from NFS backup..."; cp -a /config-backup/. /config/; echo "Restore complete."; else echo "Config exists ($(ls /config/ 2>/dev/null)) or no backup found, skipping restore."; fi']
           volumeMounts:
             - name: config
               mountPath: /config
