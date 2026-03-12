@@ -202,7 +202,7 @@ spec:
             - name: VERSION
               value: "docker"
             - name: ADVERTISE_IP
-              value: "http://192.168.40.201:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
+              value: "http://192.168.40.200:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
             - name: ALLOWED_NETWORKS
               value: "192.168.40.0/24,10.42.0.0/16"
           ports:
@@ -303,8 +303,7 @@ metadata:
   labels:
     app: plex
   annotations:
-    lbipam.cilium.io/sharing-key: "platform"
-    lbipam.cilium.io/sharing-cross-namespace: "*"
+    lbipam.cilium.io/ips: "192.168.40.200"
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local
