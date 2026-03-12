@@ -83,11 +83,8 @@ kind: Service
 metadata:
   name: nginx
   namespace: demo2
-  annotations:
-    lbipam.cilium.io/sharing-key: "apps"
-    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: nginx
   ports:
