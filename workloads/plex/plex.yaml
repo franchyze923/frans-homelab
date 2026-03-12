@@ -105,6 +105,40 @@ spec:
     requests:
       storage: 10Ti
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-familymedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-familymedia
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-familymedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -163,6 +197,9 @@ spec:
             - name: homemedia
               mountPath: /homemedia
               readOnly: true
+            - name: familymedia
+              mountPath: /familymedia
+              readOnly: true
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -173,6 +210,9 @@ spec:
         - name: homemedia
           persistentVolumeClaim:
             claimName: plex-homemedia
+        - name: familymedia
+          persistentVolumeClaim:
+            claimName: plex-familymedia
 ---
 apiVersion: v1
 kind: Service
