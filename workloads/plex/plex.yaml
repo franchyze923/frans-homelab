@@ -3,15 +3,31 @@ kind: Namespace
 metadata:
   name: plex
 ---
+# Config uses Ceph RBD for fast SQLite performance (NFS causes database locking issues)
+# Backed up to NFS periodically via CronJob, restored on fresh deploys via init container
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config
+  namespace: plex
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 20Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: plex-config-pv
+  name: plex-config-backup-pv
 spec:
   capacity:
-    storage: 1Gi
+    storage: 20Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -26,13 +42,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: plex-config
+  name: plex-config-backup
   namespace: plex
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: plex-config-pv
+  volumeName: plex-config-backup-pv
   resources:
     requests:
       storage: 20Gi
@@ -157,6 +173,15 @@ spec:
         app: plex
     spec:
       initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /config 2>/dev/null)" ] && [ -d /config-backup/Library ]; then echo "Ceph volume empty, restoring from NFS backup..."; cp -a /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup found, skipping restore."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
         - name: wait-for-media
           image: busybox:latest
           command: ['sh', '-c', 'until ls /media > /dev/null 2>&1; do echo "Waiting for media NFS mount..."; sleep 2; done; echo "Media mount ready."']
@@ -178,6 +203,8 @@ spec:
               value: "docker"
             - name: ADVERTISE_IP
               value: "http://192.168.40.201:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
+            - name: ALLOWED_NETWORKS
+              value: "192.168.40.0/24,10.42.0.0/16"
           ports:
             - containerPort: 32400
               name: http
@@ -213,6 +240,43 @@ spec:
         - name: familymedia
           persistentVolumeClaim:
             claimName: plex-familymedia
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: plex-config-backup
+---
+# CronJob: backup Plex config from Ceph to NFS every 6 hours
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plex-config-backup
+  namespace: plex
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -a /config/. /config-backup/; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: plex-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: plex-config-backup
 ---
 apiVersion: v1
 kind: Service
@@ -243,6 +307,7 @@ metadata:
     lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
   type: LoadBalancer
+  externalTrafficPolicy: Local
   selector:
     app: plex
   ports:
