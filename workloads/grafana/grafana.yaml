@@ -10,9 +10,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/grafana
@@ -20,7 +21,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: grafana-storage
+  name: grafana-pvc
   namespace: monitoring
 spec:
   accessModes:
@@ -387,7 +388,7 @@ spec:
             name: grafana-dashboards
         - name: storage
           persistentVolumeClaim:
-            claimName: grafana-storage
+            claimName: grafana-pvc
 ---
 apiVersion: v1
 kind: Service

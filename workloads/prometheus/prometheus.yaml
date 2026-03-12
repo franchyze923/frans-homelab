@@ -10,9 +10,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/prometheus
@@ -20,7 +21,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: prometheus-storage
+  name: prometheus-pvc
   namespace: monitoring
 spec:
   accessModes:
@@ -313,7 +314,7 @@ spec:
             name: prometheus-config
         - name: storage
           persistentVolumeClaim:
-            claimName: prometheus-storage
+            claimName: prometheus-pvc
 ---
 apiVersion: v1
 kind: Service

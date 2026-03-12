@@ -15,9 +15,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia/metube_youtube_downloader
@@ -48,9 +49,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/metube

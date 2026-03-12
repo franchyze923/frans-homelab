@@ -9,15 +9,16 @@ metadata:
   name: plex-config-pv
 spec:
   capacity:
-    storage: 20Gi
+    storage: 1Gi
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranArchives/k8s-pvs/plex
@@ -48,9 +49,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
-    - soft
-    - timeo=30
-    - retrans=3
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
   nfs:
     server: 192.168.40.116
     path: /mnt/user/FranData/FranMedia
@@ -65,6 +67,40 @@ spec:
     - ReadOnlyMany
   storageClassName: ""
   volumeName: plex-media-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-homemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-homemedia
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-homemedia-pv
   resources:
     requests:
       storage: 10Ti
@@ -122,6 +158,9 @@ spec:
             - name: media
               mountPath: /media
               readOnly: true
+            - name: homemedia
+              mountPath: /homemedia
+              readOnly: true
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -129,6 +168,9 @@ spec:
         - name: media
           persistentVolumeClaim:
             claimName: plex-media
+        - name: homemedia
+          persistentVolumeClaim:
+            claimName: plex-homemedia
 ---
 apiVersion: v1
 kind: Service
