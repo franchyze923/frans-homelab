@@ -211,7 +211,7 @@ spec:
           resources:
             requests:
               memory: "1Gi"
-              cpu: "1000m"
+              cpu: "4000m"
             limits:
               memory: "12Gi"
               cpu: "6000m"
@@ -263,7 +263,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -a /config/. /config-backup/; echo "Backup complete at $(date)"']
+              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
               volumeMounts:
                 - name: config
                   mountPath: /config
