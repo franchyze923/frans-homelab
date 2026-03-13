@@ -80,6 +80,12 @@ spec:
             - start-dev
           ports:
             - containerPort: 8080
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /opt/keycloak/data/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           env:
             - name: KEYCLOAK_ADMIN
               valueFrom:

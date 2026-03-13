@@ -91,6 +91,12 @@ spec:
           image: lscr.io/linuxserver/sabnzbd:latest
           ports:
             - containerPort: 8080
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /config/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           env:
             - name: PUID
               value: "1000"

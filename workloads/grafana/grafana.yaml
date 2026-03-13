@@ -353,6 +353,12 @@ spec:
           image: grafana/grafana:10.4.0
           ports:
             - containerPort: 3000
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /var/lib/grafana/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           env:
             - name: GF_SECURITY_ADMIN_USER
               value: "admin"

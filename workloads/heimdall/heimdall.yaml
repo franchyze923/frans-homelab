@@ -67,6 +67,12 @@ spec:
           ports:
             - containerPort: 80
               name: http
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /config/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           resources:
             requests:
               memory: "128Mi"

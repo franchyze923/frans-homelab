@@ -125,6 +125,12 @@ spec:
           image: lscr.io/linuxserver/radarr:latest
           ports:
             - containerPort: 7878
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /config/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           env:
             - name: PUID
               value: "1000"
