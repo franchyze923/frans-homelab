@@ -260,6 +260,13 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: plex
+                  topologyKey: kubernetes.io/hostname
           containers:
             - name: backup
               image: busybox:latest
