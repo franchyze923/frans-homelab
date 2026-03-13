@@ -61,6 +61,12 @@ spec:
               name: http
             - containerPort: 9300
               name: transport
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'ls /usr/share/elasticsearch/data/ > /dev/null 2>&1']
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
           env:
             - name: discovery.type
               value: single-node
