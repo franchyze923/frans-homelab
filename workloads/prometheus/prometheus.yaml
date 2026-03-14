@@ -1,12 +1,27 @@
+# Prometheus storage on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 15Gi
+---
+# NFS volume for storage backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: prometheus-pv
+  name: prometheus-storage-backup-pv
 spec:
   capacity:
     storage: 10Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -21,13 +36,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: prometheus-pvc
+  name: prometheus-storage-backup
   namespace: monitoring
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: prometheus-pv
+  volumeName: prometheus-storage-backup-pv
   resources:
     requests:
       storage: 10Gi
@@ -286,6 +301,16 @@ spec:
         app: prometheus
     spec:
       serviceAccountName: prometheus
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /storage/ 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
+          volumeMounts:
+            - name: storage
+              mountPath: /storage
+            - name: storage-backup
+              mountPath: /storage-backup
+              readOnly: true
       containers:
         - name: prometheus
           image: prom/prometheus:v2.51.0
@@ -296,12 +321,6 @@ spec:
             - '--web.enable-lifecycle'
           ports:
             - containerPort: 9090
-          livenessProbe:
-            exec:
-              command: ['sh', '-c', 'ls /prometheus/ > /dev/null 2>&1']
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            failureThreshold: 3
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus
@@ -321,6 +340,9 @@ spec:
         - name: storage
           persistentVolumeClaim:
             claimName: prometheus-pvc
+        - name: storage-backup
+          persistentVolumeClaim:
+            claimName: prometheus-storage-backup
 ---
 apiVersion: v1
 kind: Service
@@ -361,3 +383,43 @@ spec:
   tls:
   - hosts:
     - prometheus.franpolignano.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prometheus-storage-backup
+  namespace: monitoring
+spec:
+  schedule: "45 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: prometheus
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting prometheus storage backup..."; cp -r /storage/. /storage-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: storage
+                  mountPath: /storage
+                  readOnly: true
+                - name: storage-backup
+                  mountPath: /storage-backup
+          volumes:
+            - name: storage
+              persistentVolumeClaim:
+                claimName: prometheus-pvc
+            - name: storage-backup
+              persistentVolumeClaim:
+                claimName: prometheus-storage-backup

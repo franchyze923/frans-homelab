@@ -3,15 +3,30 @@ kind: Namespace
 metadata:
   name: keycloak
 ---
+# Data on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for data backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: keycloak-data-pv
+  name: keycloak-data-backup-pv
 spec:
   capacity:
     storage: 1Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -26,13 +41,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: keycloak-data
+  name: keycloak-data-backup
   namespace: keycloak
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: keycloak-data-pv
+  volumeName: keycloak-data-backup-pv
   resources:
     requests:
       storage: 1Gi
@@ -65,6 +80,15 @@ spec:
         app: keycloak
     spec:
       initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /data/ 2>/dev/null)" ] && [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /data-backup/. /data/; echo "Restore complete."; else echo "Data exists or no backup, skipping."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
         - name: fix-permissions
           image: busybox:latest
           command: ['sh', '-c', 'chown -R 1000:1000 /data || true']
@@ -80,12 +104,6 @@ spec:
             - start-dev
           ports:
             - containerPort: 8080
-          livenessProbe:
-            exec:
-              command: ['sh', '-c', 'ls /opt/keycloak/data/ > /dev/null 2>&1']
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            failureThreshold: 3
           env:
             - name: KEYCLOAK_ADMIN
               valueFrom:
@@ -117,6 +135,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: keycloak-data
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: keycloak-data-backup
 ---
 # Service
 apiVersion: v1
@@ -156,3 +177,43 @@ spec:
   tls:
   - hosts:
     - keycloak.franpolignano.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keycloak-data-backup
+  namespace: keycloak
+spec:
+  schedule: "30 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: keycloak
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting keycloak data backup..."; cp -r /data/. /data-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: keycloak-data
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: keycloak-data-backup

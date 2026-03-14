@@ -3,15 +3,30 @@ kind: Namespace
 metadata:
   name: radarr
 ---
+# Config on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config
+  namespace: radarr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: radarr-config-pv
+  name: radarr-config-backup-pv
 spec:
   capacity:
     storage: 1Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -26,13 +41,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: radarr-config
+  name: radarr-config-backup
   namespace: radarr
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: radarr-config-pv
+  volumeName: radarr-config-backup-pv
   resources:
     requests:
       storage: 1Gi
@@ -120,17 +135,21 @@ spec:
       labels:
         app: radarr
     spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /config/ 2>/dev/null)" ] && [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup, skipping."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
       containers:
         - name: radarr
           image: lscr.io/linuxserver/radarr:latest
           ports:
             - containerPort: 7878
-          livenessProbe:
-            exec:
-              command: ['sh', '-c', 'ls /config/ > /dev/null 2>&1']
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            failureThreshold: 3
           env:
             - name: PUID
               value: "1000"
@@ -156,6 +175,9 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: radarr-config
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: radarr-config-backup
         - name: movies
           persistentVolumeClaim:
             claimName: radarr-movies
@@ -199,3 +221,43 @@ spec:
   tls:
   - hosts:
     - radarr.franpolignano.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: radarr-config-backup
+  namespace: radarr
+spec:
+  schedule: "0 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: radarr
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting radarr config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: radarr-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: radarr-config-backup

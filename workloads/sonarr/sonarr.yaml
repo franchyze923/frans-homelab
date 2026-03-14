@@ -3,15 +3,30 @@ kind: Namespace
 metadata:
   name: sonarr
 ---
+# Config on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-config
+  namespace: sonarr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: sonarr-config-pv
+  name: sonarr-config-backup-pv
 spec:
   capacity:
     storage: 1Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -26,13 +41,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: sonarr-config
+  name: sonarr-config-backup
   namespace: sonarr
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: sonarr-config-pv
+  volumeName: sonarr-config-backup-pv
   resources:
     requests:
       storage: 1Gi
@@ -120,17 +135,21 @@ spec:
       labels:
         app: sonarr
     spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /config/ 2>/dev/null)" ] && [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup, skipping."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
       containers:
         - name: sonarr
           image: lscr.io/linuxserver/sonarr:latest
           ports:
             - containerPort: 8989
-          livenessProbe:
-            exec:
-              command: ['sh', '-c', 'ls /config/ > /dev/null 2>&1']
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            failureThreshold: 3
           env:
             - name: PUID
               value: "1000"
@@ -156,6 +175,9 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: sonarr-config
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: sonarr-config-backup
         - name: tv
           persistentVolumeClaim:
             claimName: sonarr-tv
@@ -199,3 +221,43 @@ spec:
   tls:
   - hosts:
     - sonarr.franpolignano.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sonarr-config-backup
+  namespace: sonarr
+spec:
+  schedule: "5 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: sonarr
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting sonarr config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: sonarr-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: sonarr-config-backup

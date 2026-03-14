@@ -3,15 +3,30 @@ kind: Namespace
 metadata:
   name: elk
 ---
+# Elasticsearch data on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-pvc
+  namespace: elk
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 30Gi
+---
+# NFS volume for data backups (survives cluster rebuilds)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: elasticsearch-pv
+  name: elasticsearch-data-backup-pv
 spec:
   capacity:
     storage: 20Gi
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   mountOptions:
@@ -26,13 +41,13 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: elasticsearch-pvc
+  name: elasticsearch-data-backup
   namespace: elk
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: ""
-  volumeName: elasticsearch-pv
+  volumeName: elasticsearch-data-backup-pv
   resources:
     requests:
       storage: 20Gi
@@ -53,6 +68,16 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(ls -A /data/ 2>/dev/null)" ] && [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /data-backup/. /data/; echo "Restore complete."; else echo "Data exists or no backup, skipping."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
       containers:
         - name: elasticsearch
           image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
@@ -61,12 +86,6 @@ spec:
               name: http
             - containerPort: 9300
               name: transport
-          livenessProbe:
-            exec:
-              command: ['sh', '-c', 'ls /usr/share/elasticsearch/data/ > /dev/null 2>&1']
-            initialDelaySeconds: 30
-            periodSeconds: 60
-            failureThreshold: 3
           env:
             - name: discovery.type
               value: single-node
@@ -88,6 +107,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: elasticsearch-pvc
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: elasticsearch-data-backup
 ---
 apiVersion: v1
 kind: Service
@@ -255,3 +277,43 @@ spec:
   tls:
   - hosts:
     - kibana.franpolignano.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: elasticsearch-data-backup
+  namespace: elk
+spec:
+  schedule: "35 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: elasticsearch
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:latest
+              command: ['sh', '-c', 'echo "Starting elasticsearch data backup..."; cp -r /data/. /data-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: elasticsearch-pvc
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: elasticsearch-data-backup
