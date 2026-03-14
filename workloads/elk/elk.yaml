@@ -68,10 +68,12 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      securityContext:
+        fsGroup: 1000
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(ls -A /data/ 2>/dev/null)" ] && [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /data-backup/. /data/; echo "Restore complete."; else echo "Data exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /data-backup/. /data/; chown -R 1000:1000 /data; echo "Restore complete."; else echo "Data exists or no backup, skipping."; fi']
           volumeMounts:
             - name: data
               mountPath: /data

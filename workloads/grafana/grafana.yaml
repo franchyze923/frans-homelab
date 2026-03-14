@@ -344,111 +344,6 @@ data:
       "version": 1,
       "weekStart": ""
     }
-  node-exporter.json: |
-    {
-      "annotations": {"list": []},
-      "editable": true,
-      "fiscalYearStartMonth": 0,
-      "graphTooltip": 1,
-      "id": null,
-      "links": [],
-      "liveNow": false,
-      "panels": [
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent", "max": 100, "min": 0}},
-          "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
-          "id": 1,
-          "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-          "targets": [{"expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}", "refId": "A"}],
-          "title": "CPU Usage by Node",
-          "type": "stat"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent", "max": 100, "min": 0}},
-          "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
-          "id": 2,
-          "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-          "targets": [{"expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100", "legendFormat": "{{instance}}", "refId": "A"}],
-          "title": "Memory Usage by Node",
-          "type": "stat"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent", "max": 100, "min": 0}},
-          "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
-          "id": 3,
-          "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-          "targets": [{"expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"rootfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"rootfs\"})) * 100", "legendFormat": "{{instance}}", "refId": "A"}],
-          "title": "Disk Usage by Node",
-          "type": "stat"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "percent"}},
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
-          "id": 4,
-          "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}", "refId": "A"}],
-          "title": "CPU Usage Over Time",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "percent"}},
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
-          "id": 5,
-          "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100", "legendFormat": "{{instance}}", "refId": "A"}],
-          "title": "Memory Usage Over Time",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "Bps"}},
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
-          "id": 6,
-          "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|cali.*|flannel.*\"}[5m])", "legendFormat": "{{instance}} - {{device}} RX", "refId": "A"}, {"expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|cali.*|flannel.*\"}[5m])", "legendFormat": "{{instance}} - {{device}} TX", "refId": "B"}],
-          "title": "Network I/O",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "Bps"}},
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
-          "id": 7,
-          "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "rate(node_disk_read_bytes_total[5m])", "legendFormat": "{{instance}} - {{device}} Read", "refId": "A"}, {"expr": "rate(node_disk_written_bytes_total[5m])", "legendFormat": "{{instance}} - {{device}} Write", "refId": "B"}],
-          "title": "Disk I/O",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {"type": "prometheus"},
-          "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "decbytes"}, "overrides": []},
-          "gridPos": {"h": 6, "w": 24, "x": 0, "y": 22},
-          "id": 8,
-          "options": {"footer": {"enablePagination": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "cellHeight": "sm"},
-          "targets": [{"expr": "node_memory_MemTotal_bytes", "legendFormat": "", "refId": "A", "format": "table", "instant": true}, {"expr": "node_memory_MemAvailable_bytes", "legendFormat": "", "refId": "B", "format": "table", "instant": true}, {"expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "", "refId": "C", "format": "table", "instant": true}],
-          "title": "Memory Details",
-          "type": "table",
-          "transformations": [{"id": "merge", "options": {}}, {"id": "organize", "options": {"excludeByName": {"Time": true, "job": true, "app": true, "controller_revision_hash": true, "kubernetes_namespace": true, "kubernetes_pod_name": true, "pod_template_generation": true}, "renameByName": {"instance": "Node", "Value #A": "Total", "Value #B": "Available", "Value #C": "Used"}}}]
-        }
-      ],
-      "refresh": "30s",
-      "schemaVersion": 38,
-      "style": "dark",
-      "tags": ["node-exporter", "infrastructure"],
-      "templating": {"list": []},
-      "time": {"from": "now-1h", "to": "now"},
-      "timepicker": {},
-      "timezone": "",
-      "title": "Node Metrics",
-      "uid": "node-metrics",
-      "version": 1,
-      "weekStart": ""
-    }
   weight-dashboard.json: |
     {"annotations":{"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},"editable":true,"fiscalYearStartMonth":0,"graphTooltip":1,"id":null,"links":[],"liveNow":false,"panels":[{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"decimals":2,"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":190},{"color":"red","value":200}]},"unit":"none"},"overrides":[]},"gridPos":{"h":8,"w":6,"x":0,"y":0},"id":1,"options":{"orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"showThresholdLabels":false,"showThresholdMarkers":true,"text":{}},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_weight_pounds","legendFormat":"__auto","range":true,"refId":"A"}],"title":"Current Weight (lbs)","type":"gauge"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"yellow","value":20},{"color":"red","value":25}]},"unit":"percent","decimals":2},"overrides":[]},"gridPos":{"h":8,"w":6,"x":6,"y":0},"id":2,"options":{"orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"showThresholdLabels":false,"showThresholdMarkers":true,"text":{}},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_fat_percent","legendFormat":"__auto","range":true,"refId":"A"}],"title":"Body Fat %","type":"gauge"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"axisCenteredZero":false,"axisColorMode":"text","axisLabel":"","axisPlacement":"auto","barAlignment":0,"drawStyle":"line","fillOpacity":10,"gradientMode":"none","hideFrom":{"tooltip":false,"viz":false,"legend":false},"lineInterpolation":"smooth","lineWidth":2,"pointSize":5,"scaleDistribution":{"type":"linear"},"showPoints":"auto","spanNulls":false,"stacking":{"group":"A","mode":"none"},"thresholdsStyle":{"mode":"off"}},"decimals":2,"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none"},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":0},"id":3,"options":{"legend":{"calcs":["last","min","max"],"displayMode":"table","placement":"bottom","showLegend":true},"tooltip":{"mode":"single","sort":"none"}},"targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_weight_pounds","legendFormat":"Weight (lbs)","range":true,"refId":"A"}],"title":"Weight Trend","type":"timeseries"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"axisCenteredZero":false,"axisColorMode":"text","axisLabel":"","axisPlacement":"auto","barAlignment":0,"drawStyle":"line","fillOpacity":10,"gradientMode":"none","hideFrom":{"tooltip":false,"viz":false,"legend":false},"lineInterpolation":"smooth","lineWidth":2,"pointSize":5,"scaleDistribution":{"type":"linear"},"showPoints":"auto","spanNulls":false,"stacking":{"group":"A","mode":"none"},"thresholdsStyle":{"mode":"off"}},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"percent","decimals":2},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":8},"id":4,"options":{"legend":{"calcs":["last","min","max"],"displayMode":"table","placement":"bottom","showLegend":true},"tooltip":{"mode":"single","sort":"none"}},"targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_fat_percent","legendFormat":"Body Fat %","range":true,"refId":"A"}],"title":"Body Fat % Trend","type":"timeseries"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"axisCenteredZero":false,"axisColorMode":"text","axisLabel":"","axisPlacement":"auto","barAlignment":0,"drawStyle":"line","fillOpacity":10,"gradientMode":"none","hideFrom":{"tooltip":false,"viz":false,"legend":false},"lineInterpolation":"smooth","lineWidth":2,"pointSize":5,"scaleDistribution":{"type":"linear"},"showPoints":"auto","spanNulls":false,"stacking":{"group":"A","mode":"none"},"thresholdsStyle":{"mode":"off"}},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":8},"id":5,"options":{"legend":{"calcs":["last","min","max"],"displayMode":"table","placement":"bottom","showLegend":true},"tooltip":{"mode":"single","sort":"none"}},"targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_muscle_mass_pounds","legendFormat":"Muscle Mass (lbs)","range":true,"refId":"A"}],"title":"Muscle Mass Trend","type":"timeseries"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"axisCenteredZero":false,"axisColorMode":"text","axisLabel":"","axisPlacement":"auto","barAlignment":0,"drawStyle":"line","fillOpacity":0,"gradientMode":"none","hideFrom":{"tooltip":false,"viz":false,"legend":false},"lineInterpolation":"smooth","lineWidth":2,"pointSize":5,"scaleDistribution":{"type":"linear"},"showPoints":"auto","spanNulls":false,"stacking":{"group":"A","mode":"normal"},"thresholdsStyle":{"mode":"off"}},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[{"matcher":{"id":"byName","options":"Fat Mass (lbs)"},"properties":[{"id":"color","value":{"fixedColor":"red","mode":"fixed"}}]},{"matcher":{"id":"byName","options":"Muscle Mass (lbs)"},"properties":[{"id":"color","value":{"fixedColor":"green","mode":"fixed"}}]},{"matcher":{"id":"byName","options":"Bone Mass (lbs)"},"properties":[{"id":"color","value":{"fixedColor":"blue","mode":"fixed"}}]}]},"gridPos":{"h":8,"w":12,"x":0,"y":16},"id":6,"options":{"legend":{"calcs":["last"],"displayMode":"table","placement":"bottom","showLegend":true},"tooltip":{"mode":"single","sort":"none"}},"targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_fat_mass_pounds","legendFormat":"Fat Mass (lbs)","range":true,"refId":"A"},{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_muscle_mass_pounds","hide":false,"legendFormat":"Muscle Mass (lbs)","range":true,"refId":"B"},{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_bone_mass_pounds","hide":false,"legendFormat":"Bone Mass (lbs)","range":true,"refId":"C"}],"title":"Body Composition Breakdown","type":"timeseries"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"axisCenteredZero":false,"axisColorMode":"text","axisLabel":"","axisPlacement":"auto","barAlignment":0,"drawStyle":"line","fillOpacity":10,"gradientMode":"none","hideFrom":{"tooltip":false,"viz":false,"legend":false},"lineInterpolation":"smooth","lineWidth":2,"pointSize":5,"scaleDistribution":{"type":"linear"},"showPoints":"auto","spanNulls":false,"stacking":{"group":"A","mode":"none"},"thresholdsStyle":{"mode":"off"}},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":16},"id":7,"options":{"legend":{"calcs":["last","min","max"],"displayMode":"table","placement":"bottom","showLegend":true},"tooltip":{"mode":"single","sort":"none"}},"targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_hydration_pounds","legendFormat":"Hydration (lbs)","range":true,"refId":"A"}],"title":"Body Hydration Trend","type":"timeseries"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":4,"w":6,"x":0,"y":24},"id":8,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"textMode":"auto"},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_muscle_mass_pounds","legendFormat":"Muscle Mass (lbs)","range":true,"refId":"A"}],"title":"Current Muscle Mass","type":"stat"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":4,"w":6,"x":6,"y":24},"id":9,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"textMode":"auto"},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_fat_mass_pounds","legendFormat":"Fat Mass (lbs)","range":true,"refId":"A"}],"title":"Current Fat Mass","type":"stat"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":4,"w":6,"x":12,"y":24},"id":10,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"textMode":"auto"},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_hydration_pounds","legendFormat":"Hydration (lbs)","range":true,"refId":"A"}],"title":"Current Hydration","type":"stat"},{"datasource":{"type":"prometheus","uid":"prometheus"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]},"unit":"none","decimals":2},"overrides":[]},"gridPos":{"h":4,"w":6,"x":18,"y":24},"id":11,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"values":false,"calcs":["lastNotNull"],"fields":""},"textMode":"auto"},"pluginVersion":"10.0.0","targets":[{"datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","expr":"body_bone_mass_pounds","legendFormat":"Bone Mass (lbs)","range":true,"refId":"A"}],"title":"Current Bone Mass","type":"stat"}],"refresh":"30s","schemaVersion":38,"style":"dark","tags":["health","weight","body-composition"],"templating":{"list":[]},"time":{"from":"now-30d","to":"now"},"timepicker":{},"timezone":"","title":"Body Composition Dashboard","uid":"body-composition","version":0,"weekStart":""}
 ---
@@ -468,10 +363,12 @@ spec:
       labels:
         app: grafana
     spec:
+      securityContext:
+        fsGroup: 472
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(ls -A /storage/ 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; chown -R 472:472 /storage; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
           volumeMounts:
             - name: storage
               mountPath: /storage

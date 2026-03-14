@@ -301,10 +301,12 @@ spec:
         app: prometheus
     spec:
       serviceAccountName: prometheus
+      securityContext:
+        fsGroup: 65534
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(ls -A /storage/ 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; chown -R 65534:65534 /storage; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
           volumeMounts:
             - name: storage
               mountPath: /storage

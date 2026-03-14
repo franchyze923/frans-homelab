@@ -72,7 +72,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(ls -A /config/ 2>/dev/null)" ] && [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /config-backup/. /config/; echo "Restore complete."; else echo "Config exists or no backup, skipping."; fi']
           volumeMounts:
             - name: config
               mountPath: /config
