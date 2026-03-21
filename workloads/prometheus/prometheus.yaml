@@ -10,7 +10,7 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 5Gi
+      storage: 2Gi
 ---
 # NFS volume for storage backups (survives cluster rebuilds)
 apiVersion: v1
@@ -328,9 +328,6 @@ spec:
               mountPath: /etc/prometheus
             - name: storage
               mountPath: /prometheus
-            - name: query-log
-              mountPath: /prometheus/queries.active
-              subPath: queries.active
           resources:
             requests:
               memory: "512Mi"
@@ -345,8 +342,6 @@ spec:
         - name: storage
           persistentVolumeClaim:
             claimName: prometheus-pvc
-        - name: query-log
-          emptyDir: {}
         - name: storage-backup
           persistentVolumeClaim:
             claimName: prometheus-storage-backup
