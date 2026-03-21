@@ -341,8 +341,7 @@ spec:
           configMap:
             name: prometheus-config
         - name: storage
-          persistentVolumeClaim:
-            claimName: prometheus-pvc
+          emptyDir: {}
         - name: storage-backup
           persistentVolumeClaim:
             claimName: prometheus-storage-backup
