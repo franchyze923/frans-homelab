@@ -306,7 +306,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'echo "Skipping restore, starting fresh."; chown -R 65534:65534 /storage']
+          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; chown -R 65534:65534 /storage; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
           volumeMounts:
             - name: storage
               mountPath: /storage
@@ -321,7 +321,6 @@ spec:
             - '--storage.tsdb.path=/prometheus'
             - '--storage.tsdb.retention.time=15d'
             - '--web.enable-lifecycle'
-            - '--query.max-concurrency=0'
           ports:
             - containerPort: 9090
           volumeMounts:
@@ -341,7 +340,8 @@ spec:
           configMap:
             name: prometheus-config
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: prometheus-pvc
         - name: storage-backup
           persistentVolumeClaim:
             claimName: prometheus-storage-backup
