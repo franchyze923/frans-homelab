@@ -321,6 +321,7 @@ spec:
             - '--storage.tsdb.path=/prometheus'
             - '--storage.tsdb.retention.time=15d'
             - '--web.enable-lifecycle'
+            - '--query.max-concurrency=0'
           ports:
             - containerPort: 9090
           volumeMounts:
