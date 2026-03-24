@@ -159,29 +159,21 @@ spec:
     - port: 8080
       targetPort: 8080
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: sabnzbd-ingress
+  name: sabnzbd
   namespace: sabnzbd
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: sabnzbd.franpolignano.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: sabnzbd
-            port:
-              number: 8080
-  tls:
-  - hosts:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
     - sabnzbd.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: sabnzbd
+          port: 8080
 ---
 apiVersion: batch/v1
 kind: CronJob

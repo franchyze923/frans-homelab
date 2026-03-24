@@ -198,29 +198,21 @@ spec:
     - port: 7878
       targetPort: 7878
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: radarr-ingress
+  name: radarr
   namespace: radarr
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: radarr.franpolignano.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: radarr
-            port:
-              number: 7878
-  tls:
-  - hosts:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
     - radarr.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: radarr
+          port: 7878
 ---
 apiVersion: batch/v1
 kind: CronJob

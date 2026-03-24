@@ -153,30 +153,21 @@ spec:
     - port: 8080
       targetPort: 8080
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: keycloak-ingress
+  name: keycloak
   namespace: keycloak
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: keycloak.franpolignano.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: keycloak
-            port:
-              number: 8080
-  tls:
-  - hosts:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
     - keycloak.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: keycloak
+          port: 8080
 ---
 apiVersion: batch/v1
 kind: CronJob

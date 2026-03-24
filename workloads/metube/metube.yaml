@@ -159,29 +159,21 @@ spec:
     - port: 8081
       targetPort: 8081
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: metube-ingress
+  name: metube
   namespace: metube
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: metube.franpolignano.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: metube
-            port:
-              number: 8081
-  tls:
-  - hosts:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
     - metube.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: metube
+          port: 8081
 ---
 apiVersion: batch/v1
 kind: CronJob

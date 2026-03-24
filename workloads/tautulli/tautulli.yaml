@@ -127,29 +127,21 @@ spec:
       protocol: TCP
       name: http
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: tautulli-ingress
+  name: tautulli
   namespace: tautulli
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: tautulli.franpolignano.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: tautulli
-            port:
-              number: 8181
-  tls:
-  - hosts:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
     - tautulli.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: tautulli
+          port: 8181
 ---
 apiVersion: batch/v1
 kind: CronJob
