@@ -10,7 +10,7 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 2Gi
+      storage: 10Gi
 ---
 # NFS volume for storage backups (survives cluster rebuilds)
 apiVersion: v1
