@@ -192,6 +192,7 @@ spec:
       containers:
         - name: plex
           image: lscr.io/linuxserver/plex:latest
+          imagePullPolicy: Always
           env:
             - name: PUID
               value: "1000"
@@ -336,3 +337,61 @@ spec:
     - backendRefs:
         - name: plex
           port: 32400
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plex-updater
+  namespace: plex
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plex-updater
+  namespace: plex
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plex-updater
+  namespace: plex
+subjects:
+  - kind: ServiceAccount
+    name: plex-updater
+    namespace: plex
+roleRef:
+  kind: Role
+  name: plex-updater
+  apiGroup: rbac.authorization.k8s.io
+---
+# Weekly CronJob to pull the latest Plex image by restarting the deployment
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plex-auto-update
+  namespace: plex
+spec:
+  schedule: "0 4 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: plex-updater
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl:latest
+              command:
+                - kubectl
+                - rollout
+                - restart
+                - deployment/plex
+                - -n
+                - plex
