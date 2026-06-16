@@ -27,4 +27,4 @@ curl -s localhost:8080  # -> "Hello from A"
 - Requires Argo CD to allow creation of `Application` resources.
 - Parent uses `directory.recurse: true` to pick up all child Application yamls in `apps/`.
 - Both child apps enable auto-sync with prune + self-heal.
-# app-of-apps-demo
+# app-of-apps

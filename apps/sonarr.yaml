@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/franchyze923/app-of-apps-demo.git
+    repoURL: https://github.com/franchyze923/app-of-apps.git
     targetRevision: main
     path: workloads/sonarr
   destination:
