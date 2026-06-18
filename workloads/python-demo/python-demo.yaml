@@ -25,10 +25,18 @@ metadata:
 data:
   server.py: |
     import os
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    # For the single-threaded version below, use instead:
+    # from http.server import BaseHTTPRequestHandler, HTTPServer
 
     # The message comes from ConfigMap #1, passed in as an env var.
     MESSAGE = os.environ.get("MESSAGE", "no message configured")
+
+    # Lock guards the counter's read-modify-write so concurrent
+    # requests (threaded server) don't race. Not needed single-threaded.
+    counter_lock = threading.Lock()
 
     # We persist a visit counter to disk. /data is an emptyDir volume:
     # writable, but EPHEMERAL -- it is wiped when the pod is deleted or
@@ -47,11 +55,22 @@ data:
                 self.end_headers()
                 return
 
-            count = 0
-            if os.path.exists(COUNTER_FILE):
-                count = int(open(COUNTER_FILE).read().strip())
-            count += 1
-            open(COUNTER_FILE, "w").write(str(count))
+            # Threaded version: lock the read-modify-write so concurrent
+            # requests don't lose counts.
+            with counter_lock:
+                count = 0
+                if os.path.exists(COUNTER_FILE):
+                    count = int(open(COUNTER_FILE).read().strip())
+                count += 1
+                open(COUNTER_FILE, "w").write(str(count))
+
+            # Simple single-threaded version (no lock needed, one request
+            # at a time):
+            # count = 0
+            # if os.path.exists(COUNTER_FILE):
+            #     count = int(open(COUNTER_FILE).read().strip())
+            # count += 1
+            # open(COUNTER_FILE, "w").write(str(count))
 
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -60,7 +79,11 @@ data:
 
     if __name__ == "__main__":
         print("Serving on :8080 with message:", MESSAGE)
-        HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+        # Threaded: won't hang on browser keep-alive connections.
+        ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+
+        # Simplest case (single-threaded, one request at a time):
+        # HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 ---
 # Deployment: runs the stock python image and executes our script.
 apiVersion: apps/v1
