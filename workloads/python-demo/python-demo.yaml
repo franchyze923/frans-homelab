@@ -86,14 +86,14 @@ spec:
           configMap:
             name: python-demo-app
 ---
-# Service: exposes the server on a NodePort, same style as the demo app.
+# Service: exposes the server via a LoadBalancer so it gets an external IP.
 apiVersion: v1
 kind: Service
 metadata:
   name: python-demo
   namespace: python-demo
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: python-demo
   ports:
