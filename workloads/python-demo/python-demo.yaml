@@ -30,12 +30,25 @@ data:
     # The message comes from ConfigMap #1, passed in as an env var.
     MESSAGE = os.environ.get("MESSAGE", "no message configured")
 
+    # We persist a visit counter to disk. /data is an emptyDir volume:
+    # writable, but EPHEMERAL -- it is wiped when the pod is deleted or
+    # rescheduled. Delete the pod and watch this counter reset to 1.
+    # (The /app mount holding this script is read-only, so we can't
+    # write there -- that's why we need a separate writable volume.)
+    COUNTER_FILE = "/data/counter.txt"
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            count = 0
+            if os.path.exists(COUNTER_FILE):
+                count = int(open(COUNTER_FILE).read().strip())
+            count += 1
+            open(COUNTER_FILE, "w").write(str(count))
+
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write((MESSAGE + "\n").encode())
+            self.wfile.write(f"{MESSAGE} (visit #{count})\n".encode())
 
     if __name__ == "__main__":
         print("Serving on :8080 with message:", MESSAGE)
@@ -72,19 +85,31 @@ spec:
           volumeMounts:
             - name: app
               mountPath: /app
+            # Writable ephemeral scratch space for the visit counter.
+            - name: data
+              mountPath: /data
           resources:
             requests:
               memory: "32Mi"
               cpu: "50m"
+              # Scratch disk the scheduler reserves for this pod.
+              ephemeral-storage: "100Mi"
             limits:
               memory: "64Mi"
               cpu: "100m"
+              # If writable layer + emptyDir exceed this, the kubelet
+              # evicts the pod (the storage equivalent of an OOMKill).
+              ephemeral-storage: "200Mi"
       volumes:
         # Mount the script ConfigMap (#2) at /app so the command above
         # can find /app/server.py.
         - name: app
           configMap:
             name: python-demo-app
+        # emptyDir = ephemeral volume tied to the pod's lifecycle.
+        # Survives a container restart, but is deleted when the pod is.
+        - name: data
+          emptyDir: {}
 ---
 # Service: exposes the server via a LoadBalancer.
 # The Cilium LB-IPAM sharing annotations let this service share one
