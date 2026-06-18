@@ -39,6 +39,14 @@ data:
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # Only count the root path. Browsers also request
+            # /favicon.ico on every page load, which would otherwise
+            # bump the counter twice per visit.
+            if self.path != "/":
+                self.send_response(404)
+                self.end_headers()
+                return
+
             count = 0
             if os.path.exists(COUNTER_FILE):
                 count = int(open(COUNTER_FILE).read().strip())
