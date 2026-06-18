@@ -86,12 +86,18 @@ spec:
           configMap:
             name: python-demo-app
 ---
-# Service: exposes the server via a LoadBalancer so it gets an external IP.
+# Service: exposes the server via a LoadBalancer.
+# The Cilium LB-IPAM sharing annotations let this service share one
+# external IP with other services that use the same sharing-key,
+# even across namespaces (e.g. gitea-ssh in the gitea namespace).
 apiVersion: v1
 kind: Service
 metadata:
   name: python-demo
   namespace: python-demo
+  annotations:
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
   type: LoadBalancer
   selector:
