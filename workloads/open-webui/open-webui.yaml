@@ -37,6 +37,9 @@ spec:
       labels:
         app: ollama
     spec:
+      # Pin to the GPU node (Tesla P4) so inference runs on the GPU.
+      nodeSelector:
+        gpu: "true"
       containers:
         - name: ollama
           image: ollama/ollama:latest
@@ -49,16 +52,14 @@ spec:
           resources:
             requests:
               memory: "2Gi"
-              # Guarantee a solid CPU share -- the node is overcommitted,
-              # so under contention CPU is split by request size.
-              cpu: "2"
+              cpu: "500m"
             limits:
-              # CPU inference is memory-hungry; size this for the models
-              # you plan to run (e.g. a 7B model needs ~6-8Gi).
-              memory: "10Gi"
-              # Allow bursting to 7 of the node's 8 cores (leave 1 for
-              # system + other pods) for faster CPU inference.
-              cpu: "7"
+              memory: "8Gi"
+              # Modest CPU now that the GPU does the heavy lifting.
+              cpu: "4"
+              # Request the GPU. The model runs in the P4's 8GB VRAM
+              # (a 7B Q4 model ~5GB fits; mind Frigate also uses ~330MiB).
+              nvidia.com/gpu: 1
       volumes:
         - name: models
           persistentVolumeClaim:
