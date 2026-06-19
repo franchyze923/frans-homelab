@@ -121,10 +121,12 @@ spec:
               mountPath: /app/backend/data
           resources:
             requests:
-              memory: "256Mi"
+              memory: "1Gi"
               cpu: "100m"
             limits:
-              memory: "1Gi"
+              # OpenWebUI loads a sentence-transformer embedding model on
+              # boot; 1Gi gets OOMKilled mid-startup, so give it headroom.
+              memory: "4Gi"
               cpu: "1"
       volumes:
         - name: data
