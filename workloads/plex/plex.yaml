@@ -164,6 +164,11 @@ metadata:
     app: plex
 spec:
   replicas: 1
+  # Recreate (not RollingUpdate): the config PVC is ReadWriteOnce on Ceph RBD,
+  # so the old pod must release it before the new pod can attach -- otherwise
+  # node moves deadlock with a Multi-Attach error.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: plex
