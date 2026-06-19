@@ -49,12 +49,16 @@ spec:
           resources:
             requests:
               memory: "2Gi"
-              cpu: "500m"
+              # Guarantee a solid CPU share -- the node is overcommitted,
+              # so under contention CPU is split by request size.
+              cpu: "2"
             limits:
               # CPU inference is memory-hungry; size this for the models
               # you plan to run (e.g. a 7B model needs ~6-8Gi).
               memory: "10Gi"
-              cpu: "6"
+              # Allow bursting to 7 of the node's 8 cores (leave 1 for
+              # system + other pods) for faster CPU inference.
+              cpu: "7"
       volumes:
         - name: models
           persistentVolumeClaim:
