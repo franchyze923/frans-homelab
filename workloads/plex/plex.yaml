@@ -172,6 +172,9 @@ spec:
       labels:
         app: plex
     spec:
+      # Pin to the GPU node (Tesla P4) for NVENC/NVDEC hardware transcoding.
+      nodeSelector:
+        gpu: "true"
       initContainers:
         - name: restore-config
           image: busybox:latest
@@ -206,6 +209,11 @@ spec:
               value: "http://192.168.40.200:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
             - name: ALLOWED_NETWORKS
               value: "192.168.40.0/24,10.42.0.0/16"
+            # Required for GPU transcoding: the default capability set
+            # (compute,utility) lacks "video", so NVENC/NVDEC are unavailable
+            # without this. "all" pulls in video + compute + utility.
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "all"
           ports:
             - containerPort: 32400
               name: http
@@ -216,6 +224,8 @@ spec:
             limits:
               memory: "16Gi"
               cpu: "6000m"
+              # One time-sliced slice of the P4 (shares VRAM with ollama/frigate).
+              nvidia.com/gpu: 1
           volumeMounts:
             - name: config
               mountPath: /config
