@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frigate
+---
+# Frigate NVR, migrated off the native Docker container on the GPU box.
+# Pinned to the GPU node because it needs the Tesla P4 (ONNX/TensorRT object
+# detection + NVDEC decode) AND because its data lives on that node's disk,
+# mounted via hostPath (zero-migration: same dirs the Docker container used).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frigate
+  namespace: frigate
+  labels:
+    app: frigate
+spec:
+  replicas: 1
+  # Recreate: single SQLite writer on shared hostPath -- never run two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: frigate
+  template:
+    metadata:
+      labels:
+        app: frigate
+    spec:
+      # Must land on the GPU box: GPU detection/decode + hostPath data live here.
+      nodeSelector:
+        gpu: "true"
+      containers:
+        - name: frigate
+          image: ghcr.io/blakeblackshear/frigate:stable-tensorrt
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TZ
+              value: "America/New_York"
+            # Internal go2rtc/restream RTSP password (matches the Docker setup).
+            - name: FRIGATE_RTSP_PASSWORD
+              value: "password"
+            # GPU caps for CUDA detection + NVDEC. The device plugin injects
+            # NVIDIA_VISIBLE_DEVICES (the allocated P4 slice) automatically.
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,video,utility"
+          ports:
+            - containerPort: 8971
+              name: auth-ui
+            - containerPort: 5000
+              name: ui
+            - containerPort: 8554
+              name: rtsp
+            - containerPort: 8555
+              name: webrtc-tcp
+            - containerPort: 8555
+              name: webrtc-udp
+              protocol: UDP
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+              # One time-sliced slice of the P4 (shared with ollama + Plex).
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media/frigate
+            # Frigate needs a sizable /dev/shm for decoded camera frames.
+            - name: dshm
+              mountPath: /dev/shm
+            # tmpfs for clip generation cache (best practice, reduces disk wear).
+            - name: cache
+              mountPath: /tmp/cache
+      volumes:
+        # Existing on-disk data reused in place -- no migration of the ~105GB.
+        - name: config
+          hostPath:
+            path: /home/fran/frigate/config
+            type: Directory
+        - name: media
+          hostPath:
+            path: /home/fran/frigate/storage
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frigate
+  namespace: frigate
+  labels:
+    app: frigate
+spec:
+  type: ClusterIP
+  selector:
+    app: frigate
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: ui
+---
+# Web UI via the shared gateway (like prometheus/plex). Routes to the plain
+# HTTP UI on :5000. NOTE: that port is unauthenticated -- see the cutover
+# notes about switching to the authenticated :8971 if this host is exposed.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: frigate
+  namespace: frigate
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - frigate.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: frigate
+          port: 5000
