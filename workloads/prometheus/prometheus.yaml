@@ -1,4 +1,7 @@
-# Prometheus storage on Ceph RBD for reliability (no stale NFS handles)
+# Prometheus storage on Ceph RBD for reliability (no stale NFS handles).
+# 20Gi: the 10Gi volume filled to 100%, which crashed Prometheus with a
+# SIGBUS (mmap of queries.active on a full fs). Paired with a size-based
+# retention cap below so it can't silently refill.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -10,7 +13,7 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 10Gi
+      storage: 20Gi
 ---
 # NFS volume for storage backups (survives cluster rebuilds)
 apiVersion: v1
@@ -320,6 +323,9 @@ spec:
             - '--config.file=/etc/prometheus/prometheus.yml'
             - '--storage.tsdb.path=/prometheus'
             - '--storage.tsdb.retention.time=5d'
+            # Hard size cap (volume is 20Gi); leaves headroom for WAL/head so
+            # blocks are pruned before the filesystem can fill again.
+            - '--storage.tsdb.retention.size=15GB'
             - '--web.enable-lifecycle'
           ports:
             - containerPort: 9090
