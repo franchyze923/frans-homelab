@@ -295,6 +295,11 @@ metadata:
   namespace: monitoring
 spec:
   replicas: 1
+  # Recreate: the data PVC is ReadWriteOnce on Ceph RBD, so the old pod must
+  # release it before a new one can attach -- RollingUpdate deadlocks with a
+  # Multi-Attach error when the pod moves nodes.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
