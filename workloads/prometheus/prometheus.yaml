@@ -1,55 +1,8 @@
-# Prometheus storage on Ceph RBD for reliability (no stale NFS handles).
-# 20Gi: the 10Gi volume filled to 100%, which crashed Prometheus with a
-# SIGBUS (mmap of queries.active on a full fs). Paired with a size-based
-# retention cap below so it can't silently refill.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: prometheus-pvc
-  namespace: monitoring
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: rook-ceph-block
-  resources:
-    requests:
-      storage: 20Gi
----
-# NFS volume for storage backups (survives cluster rebuilds)
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: prometheus-storage-backup-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
-  mountOptions:
-    - hard
-    - noresvport
-    - timeo=600
-    - retrans=5
-  nfs:
-    server: 192.168.40.116
-    path: /mnt/user/FranData/FranArchives/k8s-pvs/prometheus
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: prometheus-storage-backup
-  namespace: monitoring
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ""
-  volumeName: prometheus-storage-backup-pv
-  resources:
-    requests:
-      storage: 10Gi
----
+# Prometheus uses ephemeral emptyDir storage (see Deployment below): metrics
+# are disposable here, so we trade persistence for "always boots clean" --
+# no PVC means no Multi-Attach deadlocks and no full-disk WAL corruption.
+# A size-based retention cap + emptyDir sizeLimit keep node disk bounded.
+# ---
 # ServiceAccount for Prometheus
 apiVersion: v1
 kind: ServiceAccount
@@ -295,11 +248,6 @@ metadata:
   namespace: monitoring
 spec:
   replicas: 1
-  # Recreate: the data PVC is ReadWriteOnce on Ceph RBD, so the old pod must
-  # release it before a new one can attach -- RollingUpdate deadlocks with a
-  # Multi-Attach error when the pod moves nodes.
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: prometheus
@@ -311,26 +259,16 @@ spec:
       serviceAccountName: prometheus
       securityContext:
         fsGroup: 65534
-      initContainers:
-        - name: restore-config
-          image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; chown -R 65534:65534 /storage; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
-          volumeMounts:
-            - name: storage
-              mountPath: /storage
-            - name: storage-backup
-              mountPath: /storage-backup
-              readOnly: true
       containers:
         - name: prometheus
           image: prom/prometheus:v2.51.0
           args:
             - '--config.file=/etc/prometheus/prometheus.yml'
             - '--storage.tsdb.path=/prometheus'
-            - '--storage.tsdb.retention.time=5d'
-            # Hard size cap (volume is 20Gi); leaves headroom for WAL/head so
-            # blocks are pruned before the filesystem can fill again.
-            - '--storage.tsdb.retention.size=15GB'
+            - '--storage.tsdb.retention.time=7d'
+            # Hard size cap well under the emptyDir sizeLimit so blocks are
+            # pruned long before the dir can fill the node disk.
+            - '--storage.tsdb.retention.size=5GB'
             - '--web.enable-lifecycle'
           ports:
             - containerPort: 9090
@@ -350,12 +288,12 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        # Ephemeral: data is wiped on pod restart/reschedule (we don't care),
+        # but it always starts clean and can run on any node with no attach
+        # dance. sizeLimit caps node disk usage as a backstop to retention.
         - name: storage
-          persistentVolumeClaim:
-            claimName: prometheus-pvc
-        - name: storage-backup
-          persistentVolumeClaim:
-            claimName: prometheus-storage-backup
+          emptyDir:
+            sizeLimit: 8Gi
 ---
 apiVersion: v1
 kind: Service
@@ -388,43 +326,3 @@ spec:
     - backendRefs:
         - name: prometheus
           port: 9090
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: prometheus-storage-backup
-  namespace: monitoring
-spec:
-  schedule: "45 1 * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: OnFailure
-          affinity:
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchLabels:
-                      app: prometheus
-                  topologyKey: kubernetes.io/hostname
-          containers:
-            - name: backup
-              image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting prometheus storage backup..."; cp -r /storage/. /storage-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
-              volumeMounts:
-                - name: storage
-                  mountPath: /storage
-                  readOnly: true
-                - name: storage-backup
-                  mountPath: /storage-backup
-          volumes:
-            - name: storage
-              persistentVolumeClaim:
-                claimName: prometheus-pvc
-            - name: storage-backup
-              persistentVolumeClaim:
-                claimName: prometheus-storage-backup
