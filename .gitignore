@@ -1,0 +1,3 @@
+# Real secrets applied out-of-band -- never commit these.
+workloads/frigate/secret.yaml
+**/secret.yaml

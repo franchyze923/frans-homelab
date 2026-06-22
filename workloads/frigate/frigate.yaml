@@ -37,13 +37,16 @@ spec:
           env:
             - name: TZ
               value: "America/New_York"
-            # Internal go2rtc/restream RTSP password (matches the Docker setup).
-            - name: FRIGATE_RTSP_PASSWORD
-              value: "password"
             # GPU caps for CUDA detection + NVDEC. The device plugin injects
             # NVIDIA_VISIBLE_DEVICES (the allocated P4 slice) automatically.
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "compute,video,utility"
+          envFrom:
+            # FRIGATE_RTSP_PASSWORD + FRIGATE_REOLINK_PASSWORD (camera password,
+            # referenced as {FRIGATE_REOLINK_PASSWORD} in config.yaml). Applied
+            # out-of-band via secret.yaml (gitignored) -- NOT managed by ArgoCD.
+            - secretRef:
+                name: frigate-secrets
           ports:
             - containerPort: 8971
               name: auth-ui
@@ -68,6 +71,12 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            # config.yaml comes from the ConfigMap (git-managed); the rest of
+            # /config (db, model_cache) stays on the hostPath above.
+            - name: frigate-config
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: media
               mountPath: /media/frigate
             # Frigate needs a sizable /dev/shm for decoded camera frames.
@@ -77,6 +86,10 @@ spec:
             - name: cache
               mountPath: /tmp/cache
       volumes:
+        # config.yaml from git (ConfigMap); db + recordings stay on hostPath.
+        - name: frigate-config
+          configMap:
+            name: frigate-config
         # Existing on-disk data reused in place -- no migration of the ~105GB.
         - name: config
           hostPath:

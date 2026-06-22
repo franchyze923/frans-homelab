@@ -1,0 +1,99 @@
+# Frigate config, now managed in git (was hostPath /home/fran/frigate/config/config.yaml).
+# Mounted over /config/config.yaml in the Deployment via subPath; the rest of
+# /config (SQLite db, model_cache) stays on hostPath.
+#
+# Secrets are NOT in here: the camera password is referenced as
+# {FRIGATE_REOLINK_PASSWORD} and injected from the frigate-secrets Secret
+# (applied out-of-band, see secret.example.yaml). Frigate substitutes any
+# {FRIGATE_*} token from the environment at startup.
+#
+# NOTE: editing config via the Frigate UI no longer persists (read-only mount) --
+# change it here and re-sync. A pod restart is needed to pick up changes
+# (subPath configMap mounts don't live-update).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frigate-config
+  namespace: frigate
+data:
+  config.yaml: |
+    mqtt:
+      enabled: false
+
+    detectors:
+      onnx:
+        type: onnx
+        device: GPU
+
+    model:
+      model_type: yolox
+      width: 416
+      height: 416
+      input_tensor: nchw
+      input_pixel_format: rgb
+      input_dtype: float_denorm
+      path: /config/model_cache/yolox_tiny.onnx
+      labelmap_path: /labelmap/coco-80.txt
+
+    ffmpeg:
+      hwaccel_args: preset-nvidia-h264
+
+    go2rtc:
+      streams:
+        your_reolink_camera:
+          - ffmpeg:http://192.168.100.198/flv?port=1935&app=bcs&stream=channel0_main.bcs&user=admin&password={FRIGATE_REOLINK_PASSWORD}#video=copy#audio=copy#audio=opus
+        your_reolink_camera_sub:
+          - ffmpeg:http://192.168.100.198/flv?port=1935&app=bcs&stream=channel0_ext.bcs&user=admin&password={FRIGATE_REOLINK_PASSWORD}
+
+    cameras:
+      your_reolink_camera:
+        ffmpeg:
+          inputs:
+            - path: rtsp://127.0.0.1:8554/your_reolink_camera
+              input_args: preset-rtsp-restream
+              roles:
+                - record
+            - path: rtsp://127.0.0.1:8554/your_reolink_camera_sub
+              input_args: preset-rtsp-restream
+              roles:
+                - detect
+        detect:
+          width: 416
+          height: 416
+          fps: 5
+        record:
+          enabled: true
+          continuous:
+            days: 1
+          motion:
+            days: 0
+
+    detect:
+      enabled: true
+
+    version: 0.17-0
+
+    semantic_search:
+      enabled: false
+      model_size: small
+
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          threshold: 0.75
+
+    face_recognition:
+      enabled: true
+      model_size: small
+      detection_threshold: 0.75
+      min_area: 500
+
+    lpr:
+      enabled: false
+
+    classification:
+      bird:
+        enabled: false
