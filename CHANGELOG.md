@@ -12,7 +12,9 @@ as `{FRIGATE_REOLINK_PASSWORD}` and injected from a Secret.
 
 - The Secret (`frigate-secrets`) is applied **out-of-band**, not via ArgoCD:
   edit `workloads/frigate/secret.yaml` (gitignored) and `kubectl apply` it.
-  `secret.example.yaml` is the committed, value-less template.
+  See `workloads/frigate/README.md` for the template — it's documented in
+  markdown (not a `.yaml`) on purpose, so ArgoCD doesn't apply it and clobber
+  the real Secret.
 - Only the SQLite DB and recordings remain on hostPath now; the config itself
   is reproducible from the repo.
 - Editing config via the Frigate UI no longer persists (read-only mount) —
