@@ -2,5 +2,3 @@
 workloads/frigate/secret.yaml
 **/secret.yaml
 
-# Radarr/Sonarr backup exports (contain API keys + DBs) -- never commit
-*_backup_*.zip
