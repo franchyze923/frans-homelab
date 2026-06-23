@@ -102,10 +102,11 @@ spec:
             failureThreshold: 4
           resources:
             requests:
-              memory: "128Mi"
+              memory: "192Mi"
               cpu: "100m"
             limits:
-              memory: "256Mi"
+              # Was 256Mi and sitting at ~80%; modest bump for headroom.
+              memory: "384Mi"
               cpu: "500m"
           volumeMounts:
             - name: config

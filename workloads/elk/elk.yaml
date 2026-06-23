@@ -94,16 +94,18 @@ spec:
             - name: xpack.security.enabled
               value: "false"
             - name: ES_JAVA_OPTS
-              value: "-Xms512m -Xmx512m"
+              value: "-Xms1g -Xmx1g"
           volumeMounts:
             - name: data
               mountPath: /usr/share/elasticsearch/data
           resources:
             requests:
-              memory: "1Gi"
+              memory: "1536Mi"
               cpu: "500m"
             limits:
-              memory: "2Gi"
+              # Was 2Gi/512m heap and pinned at 95% -- off-heap + Lucene cache
+              # were starved. 3Gi limit + 1g heap leaves room for the FS cache.
+              memory: "3Gi"
               cpu: "1000m"
       volumes:
         - name: data

@@ -398,10 +398,11 @@ spec:
               mountPath: /var/lib/grafana
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "256Mi"
+              # Was 256Mi and sitting at ~78%; Grafana spikes when rendering.
+              memory: "512Mi"
               cpu: "500m"
       volumes:
         - name: datasources
