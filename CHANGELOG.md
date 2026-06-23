@@ -4,6 +4,22 @@ All notable changes to the homelab GitOps config are recorded here. Newest first
 
 ## 2026-06-23
 
+### Migrated weight-dashboard from Docker to a cluster app
+Moved the Withings body-composition dashboard (serves `/api/weights` for the
+Prometheus `weight-exporter`) off the Docker container on the GPU box into the
+cluster as `weight-dashboard`.
+
+- Pushed the running image to `franchyze923/weight-dashboard:latest` (built from
+  `~/repos/weight-dashboard`).
+- Ceph RBD PVC holds the OAuth `tokens.json` (refreshed in place). Withings
+  rotates refresh tokens, so the Docker copy was stopped first, then its final
+  `tokens.json` seeded into the PVC — no re-auth, no two-writer conflict.
+- Withings `CLIENT_ID`/`CLIENT_SECRET` via out-of-band Secret `withings-api-creds`
+  (`secret.yaml` gitignored). Gateway route `weight-dashboard.franpolignano.com`
+  + hourly ping CronJob to keep tokens fresh.
+- Repointed `weight-exporter` `WEIGHT_API_URL` from `192.168.40.13:5000` to the
+  in-cluster service; metrics confirmed flowing. Docker container stopped/disabled.
+
 ### Added nfs-mount-healer (auto-recovery for stale Unraid NFS mounts)
 Recurring problem: all NFS exports come from Unraid `/mnt/user` (shfs FUSE),
 which hands out unstable NFS file handles — clients periodically get ESTALE
