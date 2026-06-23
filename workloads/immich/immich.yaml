@@ -372,12 +372,14 @@ spec:
             periodSeconds: 15
             failureThreshold: 6
           resources:
+            # Bumped for the large initial import -- thumbnail generation is
+            # CPU-bound and parallelizable.
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              memory: "1Gi"
+              cpu: "1"
             limits:
-              memory: "2Gi"
-              cpu: "2"
+              memory: "4Gi"
+              cpu: "6"
       volumes:
         - name: data
           persistentVolumeClaim:
