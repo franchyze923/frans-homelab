@@ -210,7 +210,7 @@ spec:
             - containerPort: 9101
           env:
             - name: WEIGHT_API_URL
-              value: "http://192.168.40.13:5000/api/weights"
+              value: "http://weight-dashboard.weight-dashboard.svc.cluster.local:5000/api/weights"
             - name: EXPORTER_PORT
               value: "9101"
             - name: SCRAPE_INTERVAL
