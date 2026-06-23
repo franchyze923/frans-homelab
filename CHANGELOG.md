@@ -2,6 +2,23 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-23
+
+### Migrated Radarr + Sonarr config from Unraid into the cluster
+Restored the working Radarr/Sonarr configs off the Unraid box (192.168.40.116)
+into the cluster instances via each app's native backup/restore API (upload the
+System → Backup zip to `/api/v3/system/backup/restore/upload`, then restart).
+
+- Radarr: 476 movies, root folder `/movies` (matches cluster mount).
+- Sonarr: 122 series, root folder `/tv` (matches cluster mount).
+- Indexers, download clients, quality profiles, and history all carried over;
+  API keys are now the original Unraid keys (restored config.xml).
+- Backup zips contain API keys + DBs and are gitignored (`*_backup_*.zip`).
+- Known follow-up: download-client still points at Unraid SAB
+  (`192.168.40.116:8080`), whose completed dir (`/FranMedia/misc/sab_nzb/complete`)
+  the cluster pods can't see. Resolved when SAB is migrated — align cluster SAB's
+  completed dir to `/downloads` and repoint Radarr/Sonarr at the `sabnzbd` service.
+
 ## 2026-06-22
 
 ### Moved Frigate config into a ConfigMap + Secret (GitOps-reproducible)

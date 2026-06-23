@@ -190,8 +190,13 @@ kind: Service
 metadata:
   name: radarr
   namespace: radarr
+  annotations:
+    # Share the platform LoadBalancer IP (192.168.40.201) -- reachable at
+    # 192.168.40.201:7878. Still ClusterIP-backed for the gateway HTTPRoute.
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: radarr
   ports:
