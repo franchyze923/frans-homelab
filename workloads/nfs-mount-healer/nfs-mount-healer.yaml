@@ -146,12 +146,13 @@ spec:
                 - -c
                 - |
                   set -uo pipefail
-                  # target = "namespace|labelSelector|mountPath"
+                  # target = "namespace|labelSelector|space-separated mountPaths"
+                  # List ALL NFS mounts per app -- they go stale independently.
                   TARGETS="
-                  plex|app=plex|/media
-                  jellyfin|app=jellyfin|/media
-                  radarr|app=radarr|/downloads
-                  sonarr|app=sonarr|/downloads
+                  plex|app=plex|/media /homemedia /familymedia
+                  jellyfin|app=jellyfin|/media /homemedia /familymedia
+                  radarr|app=radarr|/downloads /movies
+                  sonarr|app=sonarr|/downloads /tv
                   sabnzbd|app=sabnzbd|/downloads
                   metube|app=metube|/media
                   "
@@ -162,17 +163,18 @@ spec:
                       --field-selector=status.phase=Running \
                       -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
                     if [ -z "$pod" ]; then echo "  [$ns] no running pod, skip"; continue; fi
-                    # stdout discarded; capture stderr (the ESTALE message)
+                    # ls every mount (stdout discarded); capture stderr so a
+                    # "Stale file handle" on ANY path is detected.
                     out=$(timeout 20 kubectl exec -n "$ns" "$pod" -- \
-                      sh -c "ls $path 1>/dev/null" 2>&1)
+                      sh -c "for p in $path; do ls \$p 1>/dev/null; done" 2>&1)
                     rc=$?
                     if echo "$out" | grep -qi "stale file handle"; then
-                      echo "  [$ns/$pod] STALE on $path -> deleting pod to remount"
+                      echo "  [$ns/$pod] STALE ($out) -> deleting pod to remount"
                       kubectl delete pod -n "$ns" "$pod" --wait=false
                     elif [ $rc -ne 0 ]; then
-                      echo "  [$ns/$pod] $path rc=$rc (not stale: '$out') -> leaving alone"
+                      echo "  [$ns/$pod] rc=$rc (not stale: '$out') -> leaving alone"
                     else
-                      echo "  [$ns/$pod] $path OK"
+                      echo "  [$ns/$pod] mounts OK ($path)"
                     fi
                   done
                   echo "scan complete"
