@@ -14,10 +14,24 @@ System → Backup zip to `/api/v3/system/backup/restore/upload`, then restart).
 - Indexers, download clients, quality profiles, and history all carried over;
   API keys are now the original Unraid keys (restored config.xml).
 - Backup zips contain API keys + DBs and are gitignored (`*_backup_*.zip`).
-- Known follow-up: download-client still points at Unraid SAB
-  (`192.168.40.116:8080`), whose completed dir (`/FranMedia/misc/sab_nzb/complete`)
-  the cluster pods can't see. Resolved when SAB is migrated — align cluster SAB's
-  completed dir to `/downloads` and repoint Radarr/Sonarr at the `sabnzbd` service.
+- Exposed both on the shared `platform` LoadBalancer IP: `192.168.40.201:7878`
+  (Radarr) / `:8989` (Sonarr), plus the existing gateway hostnames.
+
+### Migrated SABnzbd config from Unraid into the cluster
+Loaded the Unraid `sabnzbd.ini` (Newshosting server, categories, API keys) into
+the cluster SAB. SAB has no restore API, so the file was swapped on the config
+PVC via an in-pod s6 stop → overwrite → start (avoids the SQLite/Argo issues).
+
+- `complete_dir` changed to `/downloads` so it matches what Radarr/Sonarr mount
+  (`FranMedia/Completed_dls`); `download_dir=/downloads/incomplete`.
+- `host_whitelist` extended with `sabnzbd`, `sabnzbd.sabnzbd.svc.cluster.local`,
+  and `sabnzbd.franpolignano.com` (else SAB rejects the new hostnames).
+- Repointed Radarr/Sonarr download client to
+  `sabnzbd.sabnzbd.svc.cluster.local:8080` (cross-namespace FQDN, not the bare
+  name) — connection tests pass and both apps are health-clean.
+- Exposed SAB on the shared `platform` LB at `192.168.40.201:8080`; to free that
+  port, `python-demo` moved to `192.168.40.201:8088` (still a LoadBalancer).
+- `sabconfig.ini` is gitignored (Usenet credentials + API keys).
 
 ## 2026-06-22
 
