@@ -80,6 +80,41 @@ spec:
     requests:
       storage: 1Ti
 ---
+# External library (read-only): existing photos on Unraid, indexed in place.
+# Mounted at /mnt/external/FranHomeMedia; add libraries in Immich pointing at
+# subpaths (e.g. /mnt/external/FranHomeMedia/Frans_Photos/2013).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-ext-franhomemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-ext-franhomemedia
+  namespace: immich
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: immich-ext-franhomemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 # ---------------------------------------------------------------------------
 # PostgreSQL (Immich's VectorChord/pgvecto-rs image -- required, not stock pg)
 # ---------------------------------------------------------------------------
@@ -325,6 +360,10 @@ spec:
             # Originals on NFS, nested under the Ceph /data mount.
             - name: library
               mountPath: /data/library
+            # Read-only external library (existing photos, indexed in place).
+            - name: ext-franhomemedia
+              mountPath: /mnt/external/FranHomeMedia
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/server/ping
@@ -346,6 +385,9 @@ spec:
         - name: library
           persistentVolumeClaim:
             claimName: immich-library
+        - name: ext-franhomemedia
+          persistentVolumeClaim:
+            claimName: immich-ext-franhomemedia
 ---
 apiVersion: v1
 kind: Service
