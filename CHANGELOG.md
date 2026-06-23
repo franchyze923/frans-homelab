@@ -4,6 +4,23 @@ All notable changes to the homelab GitOps config are recorded here. Newest first
 
 ## 2026-06-23
 
+### Added nfs-mount-healer (auto-recovery for stale Unraid NFS mounts)
+Recurring problem: all NFS exports come from Unraid `/mnt/user` (shfs FUSE),
+which hands out unstable NFS file handles — clients periodically get ESTALE
+("Stale file handle") until remounted, and it had to be fixed by hand. The
+Unraid-side knob (`fuse_remember`) isn't exposed in this Unraid version, so the
+fix lives in-cluster.
+
+- New app `nfs-mount-healer`: a CronJob (every 3 min) that execs `ls` against
+  each media pod's NFS mount and, on a confirmed `Stale file handle`, deletes
+  the pod so the kubelet re-mounts it fresh. (A liveness probe can't do this —
+  a container restart doesn't re-mount; only pod recreation does.)
+- Only acts on confirmed ESTALE (transient/other errors are logged, not
+  restarted) so live Plex/Jellyfin streams aren't interrupted needlessly.
+- Watches plex, jellyfin, radarr, sonarr, sabnzbd, metube; scoped RBAC
+  (exec + delete) via per-namespace RoleBindings.
+- Caught and healed a stale Plex `/media` mount on its first run.
+
 ### Migrated Radarr + Sonarr config from Unraid into the cluster
 Restored the working Radarr/Sonarr configs off the Unraid box (192.168.40.116)
 into the cluster instances via each app's native backup/restore API (upload the
