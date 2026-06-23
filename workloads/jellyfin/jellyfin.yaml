@@ -86,6 +86,76 @@ spec:
     requests:
       storage: 10Ti
 ---
+# Home media (matches Plex's plex-homemedia)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-homemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-homemedia
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: jellyfin-homemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+# Family media (matches Plex's plex-familymedia)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-familymedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-familymedia
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: jellyfin-familymedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -95,6 +165,10 @@ metadata:
     app: jellyfin
 spec:
   replicas: 1
+  # Recreate: config PVC is ReadWriteOnce, so RollingUpdate deadlocks with a
+  # Multi-Attach error (old pod holds the volume) when the pod is replaced.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: jellyfin
@@ -138,6 +212,12 @@ spec:
             - name: media
               mountPath: /media
               readOnly: true
+            - name: homemedia
+              mountPath: /homemedia
+              readOnly: true
+            - name: familymedia
+              mountPath: /familymedia
+              readOnly: true
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -148,6 +228,12 @@ spec:
         - name: media
           persistentVolumeClaim:
             claimName: jellyfin-media
+        - name: homemedia
+          persistentVolumeClaim:
+            claimName: jellyfin-homemedia
+        - name: familymedia
+          persistentVolumeClaim:
+            claimName: jellyfin-familymedia
 ---
 apiVersion: v1
 kind: Service
