@@ -44,7 +44,7 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 100Gi
+      storage: 300Gi
 ---
 # Original photos/videos on Unraid NFS at /mnt/user/FranData/immich (static PV,
 # Retain -- photos survive a PVC delete). Matches the other media shares.
