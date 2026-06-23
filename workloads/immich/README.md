@@ -11,13 +11,13 @@ Self-hosted photo/video backup (Immich **v2.7.5**), deployed fresh in-cluster.
 ## Storage split
 - **Ceph RBD** (`rook-ceph-block`): postgres data, ML model cache, and the immich
   `/data` root — i.e. thumbnails, encoded-video, profile, upload staging, backups.
-- **NFS** (`nfs-client` dynamic provisioner, on Unraid): the **original** photos/videos,
-  mounted at `/data/library` (the bulk of the data).
+- **NFS** (static PV, Retain): the **original** photos/videos at
+  `192.168.40.116:/mnt/user/FranData/immich`, mounted at `/data/library`.
 
-> The NFS library PVC uses the `nfs-client` storageclass (reclaim **Delete**, the
-> nfs-subdir provisioner archives the dir on PVC delete by default). If you'd
-> rather have the originals at a fixed, browseable Unraid path with **Retain**,
-> swap `immich-library` for a static NFS PV pointing at a pre-created folder.
+> The library uses a static NFS PV with `persistentVolumeReclaimPolicy: Retain`
+> (photos survive a PVC delete), matching the other media shares. The
+> `nfs-client` dynamic provisioner was avoided here — it's a single fragile pod
+> and lands data in the `k8s-pvs` backup folder, neither ideal for a photo library.
 
 ## Secret (out-of-band, NOT in git)
 `immich-secrets` holds `DB_PASSWORD` (alphanumeric only). `secret.yaml` is

@@ -4,6 +4,21 @@ All notable changes to the homelab GitOps config are recorded here. Newest first
 
 ## 2026-06-23
 
+### Deployed Immich (v2.7.5) as a cluster app
+Fresh in-cluster Immich (photo/video backup) — `apps/immich.yaml` +
+`workloads/immich/`. Four components: `immich-server`, `immich-machine-learning`
+(CUDA image on the time-sliced P4), VectorChord Postgres, and valkey.
+
+- **Storage split:** Ceph RBD for Postgres data, ML model cache, and the `/data`
+  root (thumbnails, encoded-video, profile, upload staging); a **static NFS PV
+  (Retain)** at `/mnt/user/FranData/immich` for the original photos
+  (`/data/library`). Ceph only had ~169 GB free, so originals must live on NFS.
+- DB password via out-of-band Secret `immich-secrets` (`secret.yaml` gitignored).
+- Exposed at `immich.franpolignano.com` and the shared LB `192.168.40.201:2283`.
+- Gotcha hit along the way: the `nfs-client` dynamic provisioner pod was stuck
+  on a stale NFS mount — force-restarted it, and switched Immich's library to a
+  static PV instead (more robust + cleaner path).
+
 ### Removed headlamp
 Deleted the `headlamp` app (k8s dashboard) — no longer used. Removed
 `apps/headlamp.yaml` + `workloads/headlamp/`; Argo pruned the Deployment,
