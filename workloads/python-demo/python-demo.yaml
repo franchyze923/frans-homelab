@@ -186,9 +186,11 @@ metadata:
     lbipam.cilium.io/sharing-key: "platform"
     lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
+  # External port moved 8080 -> 8088 on the shared platform IP (.201) so
+  # SABnzbd can take the standard :8080. App still listens on 8080 (targetPort).
   type: LoadBalancer
   selector:
     app: python-demo
   ports:
-    - port: 8080
+    - port: 8088
       targetPort: 8080
