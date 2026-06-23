@@ -4,6 +4,16 @@ All notable changes to the homelab GitOps config are recorded here. Newest first
 
 ## 2026-06-23
 
+### Removed headlamp
+Deleted the `headlamp` app (k8s dashboard) — no longer used. Removed
+`apps/headlamp.yaml` + `workloads/headlamp/`; Argo pruned the Deployment,
+Service, HTTPRoute (`headlamp.franpolignano.com`), and namespace.
+
+### Exposed weight-dashboard on the shared LoadBalancer IP
+weight-dashboard Service is now `LoadBalancer` on the shared `platform` IP
+(`192.168.40.201:5000`) via the sharing-key — reachable directly as well as
+through the gateway hostname and in-cluster.
+
 ### Migrated weight-dashboard from Docker to a cluster app
 Moved the Withings body-composition dashboard (serves `/api/weights` for the
 Prometheus `weight-exporter`) off the Docker container on the GPU box into the
