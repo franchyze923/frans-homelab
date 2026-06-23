@@ -286,7 +286,7 @@ metadata:
   labels:
     app: immich-server
 spec:
-  replicas: 0  # temporarily 0 to swap the library PVC; restored to 1 next commit
+  replicas: 1
   strategy:
     type: Recreate
   selector:
