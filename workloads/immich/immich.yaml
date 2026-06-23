@@ -46,7 +46,27 @@ spec:
     requests:
       storage: 50Gi
 ---
-# Original photos/videos on Unraid NFS (dynamically provisioned subdir).
+# Original photos/videos on Unraid NFS at /mnt/user/FranData/immich (static PV,
+# Retain -- photos survive a PVC delete). Matches the other media shares.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-library-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/immich
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -54,7 +74,8 @@ metadata:
   namespace: immich
 spec:
   accessModes: [ReadWriteMany]
-  storageClassName: nfs-client
+  storageClassName: ""
+  volumeName: immich-library-pv
   resources:
     requests:
       storage: 1Ti
