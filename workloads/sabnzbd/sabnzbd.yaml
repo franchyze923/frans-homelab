@@ -93,6 +93,10 @@ metadata:
   namespace: sabnzbd
 spec:
   replicas: 1
+  # Recreate: config PVC is ReadWriteOnce, so RollingUpdate deadlocks with a
+  # Multi-Attach error (old pod holds the volume) when the pod is replaced.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sabnzbd
@@ -151,8 +155,13 @@ kind: Service
 metadata:
   name: sabnzbd
   namespace: sabnzbd
+  annotations:
+    # Share the platform LoadBalancer IP (192.168.40.201) -- reachable at
+    # 192.168.40.201:8080. Still ClusterIP-backed for the gateway HTTPRoute.
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: sabnzbd
   ports:
