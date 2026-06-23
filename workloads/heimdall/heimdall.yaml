@@ -61,6 +61,10 @@ metadata:
     app: heimdall
 spec:
   replicas: 1
+  # Recreate: config PVC is ReadWriteOnce, so RollingUpdate deadlocks with a
+  # Multi-Attach error (old pod holds the volume) when the pod is replaced.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: heimdall
