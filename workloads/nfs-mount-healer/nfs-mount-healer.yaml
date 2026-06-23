@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-mount-healer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-mount-healer
+  namespace: nfs-mount-healer
+---
+# Permission template: check (exec) and restart (delete) pods. Scoped to the
+# media namespaces via RoleBindings below -- not granted cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nfs-mount-healer
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+---
+# One RoleBinding per target namespace (least privilege).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: plex
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: jellyfin
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: radarr
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: sonarr
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: sabnzbd
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nfs-mount-healer
+  namespace: metube
+subjects:
+  - kind: ServiceAccount
+    name: nfs-mount-healer
+    namespace: nfs-mount-healer
+roleRef:
+  kind: ClusterRole
+  name: nfs-mount-healer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Every 3 min: check each media pod's NFS mount; if it returns ESTALE
+# ("Stale file handle"), delete the pod so the kubelet re-mounts it fresh.
+# (Unraid /mnt/user shfs hands out unstable NFS handles; a container restart
+# would NOT remount, so we must recreate the pod.) Only acts on a CONFIRMED
+# stale handle -- transient/other errors are logged, not restarted, so live
+# Plex/Jellyfin streams aren't interrupted needlessly.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nfs-mount-healer
+  namespace: nfs-mount-healer
+spec:
+  schedule: "*/3 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: nfs-mount-healer
+          restartPolicy: Never
+          containers:
+            - name: healer
+              image: bitnami/kubectl:latest
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "200m"
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -uo pipefail
+                  # target = "namespace|labelSelector|mountPath"
+                  TARGETS="
+                  plex|app=plex|/media
+                  jellyfin|app=jellyfin|/media
+                  radarr|app=radarr|/downloads
+                  sonarr|app=sonarr|/downloads
+                  sabnzbd|app=sabnzbd|/downloads
+                  metube|app=metube|/media
+                  "
+                  echo "[$(date -u +%H:%M:%S)] nfs-mount-healer scan"
+                  echo "$TARGETS" | while IFS='|' read -r ns label path; do
+                    [ -z "$ns" ] && continue
+                    pod=$(kubectl get pod -n "$ns" -l "$label" \
+                      --field-selector=status.phase=Running \
+                      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                    if [ -z "$pod" ]; then echo "  [$ns] no running pod, skip"; continue; fi
+                    # stdout discarded; capture stderr (the ESTALE message)
+                    out=$(timeout 20 kubectl exec -n "$ns" "$pod" -- \
+                      sh -c "ls $path 1>/dev/null" 2>&1)
+                    rc=$?
+                    if echo "$out" | grep -qi "stale file handle"; then
+                      echo "  [$ns/$pod] STALE on $path -> deleting pod to remount"
+                      kubectl delete pod -n "$ns" "$pod" --wait=false
+                    elif [ $rc -ne 0 ]; then
+                      echo "  [$ns/$pod] $path rc=$rc (not stale: '$out') -> leaving alone"
+                    else
+                      echo "  [$ns/$pod] $path OK"
+                    fi
+                  done
+                  echo "scan complete"
