@@ -115,6 +115,40 @@ spec:
     requests:
       storage: 10Ti
 ---
+# Transcoded videos on NFS (moved off Ceph -- they were 58GB x3-replicated and
+# filled the Proxmox datastore). Mounted at /data/encoded-video.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-encoded-video-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/immich-encoded-video
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-encoded-video
+  namespace: immich
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: immich-encoded-video-pv
+  resources:
+    requests:
+      storage: 1Ti
+---
 # ---------------------------------------------------------------------------
 # PostgreSQL (Immich's VectorChord/pgvecto-rs image -- required, not stock pg)
 # ---------------------------------------------------------------------------
@@ -321,7 +355,7 @@ metadata:
   labels:
     app: immich-server
 spec:
-  replicas: 0  # temporarily 0 to move encoded-video off Ceph to NFS; back to 1 next commit
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -364,6 +398,9 @@ spec:
             # Originals on NFS, nested under the Ceph /data mount.
             - name: library
               mountPath: /data/library
+            # Transcoded videos on NFS (kept off Ceph).
+            - name: encoded-video
+              mountPath: /data/encoded-video
             # Read-only external library (existing photos, indexed in place).
             - name: ext-franhomemedia
               mountPath: /mnt/external/FranHomeMedia
@@ -391,6 +428,9 @@ spec:
         - name: library
           persistentVolumeClaim:
             claimName: immich-library
+        - name: encoded-video
+          persistentVolumeClaim:
+            claimName: immich-encoded-video
         - name: ext-franhomemedia
           persistentVolumeClaim:
             claimName: immich-ext-franhomemedia
