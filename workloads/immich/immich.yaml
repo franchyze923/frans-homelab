@@ -321,7 +321,7 @@ metadata:
   labels:
     app: immich-server
 spec:
-  replicas: 1
+  replicas: 0  # temporarily 0 to move encoded-video off Ceph to NFS; back to 1 next commit
   strategy:
     type: Recreate
   selector:
