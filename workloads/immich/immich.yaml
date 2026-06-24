@@ -455,10 +455,10 @@ spec:
             # of the 8-core node so jobs run hard without starving the API.
             requests:
               memory: "1Gi"
-              cpu: "3"
+              cpu: "4"
             limits:
               memory: "4Gi"
-              cpu: "7"
+              cpu: "10"
       volumes:
         - name: data
           persistentVolumeClaim:
