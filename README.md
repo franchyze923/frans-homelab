@@ -118,3 +118,32 @@ Apps are reachable two ways:
 3. If it needs a secret: add a gitignored `secret.yaml` + a README template, and
    `kubectl apply` the secret out-of-band.
 4. Commit + push. The root `app-of-apps` picks it up and Argo syncs it.
+
+## Manual / out-of-band setup (NOT in GitOps)
+
+ArgoCD itself bootstraps this repo, so its own install is **not** managed here
+(installed from the upstream manifests). These tweaks are applied with `kubectl`
+and must be **re-applied on a fresh cluster** — they don't live in Git.
+
+### Enable the ArgoCD web terminal (exec into pods from the UI)
+Off by default for security. To turn it on:
+
+```sh
+# 1. enable the feature
+kubectl patch cm -n argocd argocd-cm --type merge \
+  -p '{"data":{"exec.enabled":"true"}}'
+
+# 2. grant argocd-server permission to exec into pods (not in the default role)
+kubectl patch clusterrole argocd-server --type=json \
+  -p '[{"op":"add","path":"/rules/-","value":{"apiGroups":[""],"resources":["pods/exec"],"verbs":["create"]}}]'
+
+# 3. restart the server
+kubectl rollout restart deploy -n argocd argocd-server
+```
+
+RBAC: the built-in `admin` user is a superuser and gets exec automatically. For
+non-admin/SSO users, also add to `argocd-rbac-cm` `policy.csv`:
+`p, role:admin, exec, create, */*, allow`.
+
+Then in the UI: open an app → a Pod → the **Terminal** tab. Security note: this
+lets anyone with that ArgoCD role run commands in any pod.
