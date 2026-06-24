@@ -332,6 +332,10 @@ spec:
       labels:
         app: immich-server
     spec:
+      # Pin to the near-idle worker so the import jobs + API have a whole node's
+      # worth of CPU (worker-2 was saturated, starving the API -> UI hangs).
+      nodeSelector:
+        kubernetes.io/hostname: k8s-cluster-prod-worker-1
       containers:
         - name: immich-server
           image: ghcr.io/immich-app/immich-server:v2.7.5
@@ -372,14 +376,14 @@ spec:
             periodSeconds: 15
             failureThreshold: 6
           resources:
-            # Bumped for the large initial import -- thumbnail generation is
-            # CPU-bound and parallelizable.
+            # On the idle worker: reserve real cores and allow bursting to most
+            # of the 8-core node so jobs run hard without starving the API.
             requests:
               memory: "1Gi"
-              cpu: "1"
+              cpu: "3"
             limits:
               memory: "4Gi"
-              cpu: "6"
+              cpu: "7"
       volumes:
         - name: data
           persistentVolumeClaim:
