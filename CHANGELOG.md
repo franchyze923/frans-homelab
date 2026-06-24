@@ -2,6 +2,47 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-24
+
+### Exposed the Rook-Ceph dashboard
+`apps/ceph-dashboard.yaml` + `workloads/ceph-dashboard/` — an `HTTPRoute` putting
+the mgr dashboard at `ceph.franpolignano.com` (cluster health, OSDs, pools, PGs,
+capacity, RBD images, throughput graphs). Dashboard SSL disabled out-of-band so
+the gateway terminates TLS and proxies HTTP to `rook-ceph-mgr-dashboard:7000`.
+
+### Rearchitected Ceph storage (6→3 OSDs, size 3→2, 100→150 GB)
+After a disk-full outage (see below), reworked Ceph to be simpler, predictable,
+and not overcommitted. Rook-ceph is **manually managed** (not in Git) — see the
+README out-of-band section.
+
+- **6 OSDs → 3** (one per node, all on the NVMe `speedy-nvme-drive`). Drained +
+  purged the extra OSD per host one at a time (`ceph osd out` → wait clean →
+  scale OSD deploy to 0 → `ceph osd purge` → delete the rook deploy → delete the
+  Proxmox disk; `useAllDevices:true` means the disk must be removed or the
+  operator recreates the OSD). Also freed `local-lvm` (worker-2's OSD had been
+  moved there during the outage).
+- **OSD disks 100 → 150 GB** (`qm disk resize` live, then restart the OSD pod —
+  rook's `expand-bluefs` init grows BlueStore).
+- **Pool replication size 3 → 2**, `min_size 1` → usable Ceph went ~150 → ~210
+  GiB. Each node now has exactly **1 OS disk + 1 OSD disk**.
+- **⚠️ Device-path reboot gotcha:** removing each node's old OSD disk left a gap
+  in the SCSI ordering, so on the next reboot the surviving OSD disk shifted
+  `/dev/sdc → /dev/sdb`, but the rook OSD deployments had `/dev/sdc` hardcoded →
+  OSDs couldn't find their disk → cluster down. Fix: `kubectl -n rook-ceph set
+  env deploy/rook-ceph-osd-<id> ROOK_BLOCK_PATH=/dev/sdb` + restart each pod. Now
+  stable (paths match), but adding/removing a node disk could shift them again.
+
+### Moved Immich transcodes off Ceph + fixed the disk-full outage
+A Proxmox datastore (`speedy-nvme-drive` LVM-thin pool) filled to ~90% — Immich's
+`encoded-video` (transcodes) had grown to 58 GB ×3 replication on Ceph and, with
+the pool overcommitted, paused all VMs overnight (clock skew → Ceph broke; see
+the proxmox-pause-clock-skew memory).
+
+- **`encoded-video` → NFS** at `/mnt/user/FranData/immich-encoded-video` (static
+  RWX PV) so Ceph no longer grows with transcodes.
+- Enabled BlueStore discard (`bdev_enable_discard`) + `fstrim` so freed space
+  actually returns to the thin pool. `speedy-nvme-drive` 90% → ~59%.
+
 ## 2026-06-23
 
 ### Deployed Immich (v2.7.5) as a cluster app

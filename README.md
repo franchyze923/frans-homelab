@@ -27,7 +27,9 @@ To deploy: edit/add manifests, commit, push. Argo syncs within a few minutes
 - **kubeadm** cluster: 1 control-plane + 2 workers (Rocky Linux) + 1 GPU node
   (`ubuntu24-gpu-box`, Ubuntu, Tesla P4).
 - **Cilium** CNI (no kube-proxy); **Cilium Gateway API** for ingress + LB IPAM.
-- **Rook-Ceph** for block storage (`rook-ceph-block` / RBD).
+- **Rook-Ceph** for block storage (`rook-ceph-block` / RBD) — 3 OSDs (one per
+  node, on the NVMe), `size=2` replication, ~210 GiB usable. Manually managed
+  (not in Git); dashboard at `ceph.franpolignano.com`.
 - **Unraid** NAS (`192.168.40.116`) over NFS for media + config backups.
 
 ## Applications
@@ -147,3 +149,47 @@ non-admin/SSO users, also add to `argocd-rbac-cm` `policy.csv`:
 
 Then in the UI: open an app → a Pod → the **Terminal** tab. Security note: this
 lets anyone with that ArgoCD role run commands in any pod.
+
+### Rook-Ceph (manually managed, NOT in Git)
+
+The rook-ceph operator + CephCluster were installed from upstream manifests, so
+they're **not** in this repo. Current layout: **3 OSDs**, one per node, each a
+150 GB virtual disk on `speedy-nvme-drive` (NVMe); pool `replicapool` is
+`size=2`/`min_size=1` (~210 GiB usable). Each node VM = 1 OS disk + 1 OSD disk.
+`useAllDevices: true`, so attaching a disk to a node auto-creates an OSD.
+
+Useful ops (via the toolbox: `kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph ...`):
+
+```sh
+ceph status; ceph osd df; ceph df            # health, OSD fill, usable space
+ceph osd pool set replicapool size 2         # replication factor (2 or 3)
+ceph config set osd osd_mclock_profile high_recovery_ops   # speed up backfill
+```
+
+**Grow an OSD:** `qm disk resize <vmid> scsi2 +NG` on Proxmox (live), then
+`kubectl -n rook-ceph rollout restart deploy/rook-ceph-osd-<id>` (the
+`expand-bluefs` init grows BlueStore). **Remove an OSD:** `ceph osd out <id>` →
+wait `active+clean` → scale the OSD deploy to 0 → `ceph osd purge <id>` → delete
+the deploy → delete the Proxmox disk (required, else the operator recreates it).
+
+**⚠️ Device-path reboot gotcha:** the OSD disks are referenced by `/dev/sdX` in
+each `rook-ceph-osd-<id>` deployment (`ROOK_BLOCK_PATH`). Adding/removing a node
+disk can shift the kernel naming (e.g. `/dev/sdc → /dev/sdb`) on the next reboot,
+after which the OSD can't find its disk and the pod fails in the `activate` init
+(`lsblk: /dev/sdX: not a block device`). Fix: check the real device
+(`lsblk` — the OSD one has a `bluestore block` signature), then
+`kubectl -n rook-ceph set env deploy/rook-ceph-osd-<id> ROOK_BLOCK_PATH=/dev/sdX`
+and restart the pod. Data is safe (BlueStore is intact on disk); the OSD just
+needs the right path.
+
+### Ceph dashboard SSL (for `ceph.franpolignano.com`)
+
+The `HTTPRoute` is in Git (`workloads/ceph-dashboard/`) but the dashboard's SSL
+must be disabled out-of-band so the gateway can proxy plain HTTP:
+
+```sh
+kubectl -n rook-ceph patch cephcluster rook-ceph --type merge \
+  -p '{"spec":{"dashboard":{"ssl":false}}}'           # flips :8443 https -> :7000 http
+kubectl -n rook-ceph get secret rook-ceph-dashboard-password \
+  -o jsonpath='{.data.password}' | base64 -d; echo    # admin password
+```
