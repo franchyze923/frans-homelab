@@ -115,6 +115,41 @@ spec:
     requests:
       storage: 10Ti
 ---
+# External library (read-only): family photos on Unraid, indexed in place.
+# Mounted at /mnt/external/FamilyHomeMedia; add a library in Immich pointing at
+# /mnt/external/FamilyHomeMedia/Family Photos.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-ext-familyhomemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-ext-familyhomemedia
+  namespace: immich
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: immich-ext-familyhomemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 # Transcoded videos on NFS (moved off Ceph -- they were 58GB x3-replicated and
 # filled the Proxmox datastore). Mounted at /data/encoded-video.
 apiVersion: v1
@@ -405,6 +440,9 @@ spec:
             - name: ext-franhomemedia
               mountPath: /mnt/external/FranHomeMedia
               readOnly: true
+            - name: ext-familyhomemedia
+              mountPath: /mnt/external/FamilyHomeMedia
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/server/ping
@@ -434,6 +472,9 @@ spec:
         - name: ext-franhomemedia
           persistentVolumeClaim:
             claimName: immich-ext-franhomemedia
+        - name: ext-familyhomemedia
+          persistentVolumeClaim:
+            claimName: immich-ext-familyhomemedia
 ---
 apiVersion: v1
 kind: Service
