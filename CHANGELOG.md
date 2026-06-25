@@ -39,6 +39,14 @@ the P4 GPU node (CUDA), Postgres/redis on amd64.
 - Tuned `immich-machine-learning` (CPU 2→6) and `immich-server` CPU during the
   import; worker-1 VM bumped 8→12 cores on the R720 before the move to the M1.
 
+### Misc (out-of-band)
+- Labeled the M1 node's role: `node-role.kubernetes.io/m1worker` (cosmetic, not
+  in Git — re-apply on rebuild).
+- **Ceph dashboard password gotcha:** rook reverts password changes made in the
+  dashboard UI — it enforces whatever is in the `rook-ceph-dashboard-password`
+  secret. To change it durably: update the secret **and** apply it live
+  (`ceph dashboard ac-user-set-password admin -i <file>`), don't use the UI.
+
 ## 2026-06-24
 
 ### Exposed the Rook-Ceph dashboard

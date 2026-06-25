@@ -216,3 +216,13 @@ kubectl -n rook-ceph patch cephcluster rook-ceph --type merge \
 kubectl -n rook-ceph get secret rook-ceph-dashboard-password \
   -o jsonpath='{.data.password}' | base64 -d; echo    # admin password
 ```
+
+**Changing the password:** don't use the dashboard UI — rook reverts it to the
+secret. Update the secret, then apply it live:
+```sh
+kubectl -n rook-ceph create secret generic rook-ceph-dashboard-password \
+  --from-literal=password='NEW' --dry-run=client -o yaml | kubectl apply -f -
+PWB64=$(kubectl -n rook-ceph get secret rook-ceph-dashboard-password -o jsonpath='{.data.password}')
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- sh -c \
+  "echo '$PWB64' | base64 -d > /tmp/p && ceph dashboard ac-user-set-password admin -i /tmp/p; rm -f /tmp/p"
+```
