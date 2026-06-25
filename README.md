@@ -195,9 +195,15 @@ kubectl -n rook-ceph patch cm rook-ceph-operator-config --type merge \
 kubectl -n rook-ceph rollout restart deploy rook-ceph-operator
 ```
 
-Also: the arm64 node needs the `rbd` kernel module (`echo rbd | sudo tee
-/etc/modules-load.d/rbd.conf`) or the RBD CSI plugin crashloops on
-`modprobe rbd`.
+Other arm64 node prep (on the Ubuntu VM, beyond the standard kubeadm steps):
+- **`rbd` kernel module:** `echo rbd | sudo tee /etc/modules-load.d/rbd.conf`
+  (else the RBD CSI plugin crashloops on `modprobe rbd`).
+- **`nfs-common`:** `sudo apt-get install -y nfs-common` — required for any NFS
+  PV to mount (`mount: ... need a /sbin/mount.<type> helper` otherwise).
+- **Disable swap *persistently*:** the kubelet won't start with swap on. On
+  Ubuntu 26.04 swap is **zram** (not fstab), so also
+  `sudo systemctl mask systemd-zram-setup@zram0.service` — `swapoff -a` + fstab
+  edits alone don't survive a reboot.
 
 ### Ceph dashboard SSL (for `ceph.franpolignano.com`)
 

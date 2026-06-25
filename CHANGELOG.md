@@ -2,6 +2,43 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-25
+
+### Added an M1 Mac Mini as an arm64 cluster node
+Joined an M1 Mac (Ubuntu 26.04 **arm64** VM, via UTM, bridged networking) as a
+worker — the cluster is now **mixed-architecture** (4× amd64 on the R720/gpu-box
++ 1× arm64). The node is **manually managed** (kubeadm join, not in Git); the
+README out-of-band section documents the prep.
+
+- Tainted `arch=arm64:NoSchedule` to reserve it for deliberate placement.
+- **Out-of-band gotchas** (all in README): rook CSI plugins need an arm64
+  toleration (`CSI_PLUGIN_TOLERATIONS`) or no Ceph volumes mount there; the node
+  needs the `rbd` kernel module (`/etc/modules-load.d/rbd.conf`) and `nfs-common`;
+  and swap must be disabled **persistently** — on 26.04 that means masking zram,
+  not just editing fstab, or the kubelet won't start after a reboot.
+- Validated it's reboot-proof: node, swap, Ceph RBD, NFS, and pods all
+  auto-recover (~3–4 min, gated by CSI driver re-registration).
+
+### Moved immich-server onto the M1 (arm64)
+Pinned `immich-server` to the M1 (`nodeSelector: mac-m1-worker` + arm64
+toleration), sized for the VM (CPU limit 5, 3Gi). It runs the **native arm64**
+Immich image with full Ceph RBD + NFS access. `immich-machine-learning` stays on
+the P4 GPU node (CUDA), Postgres/redis on amd64.
+
+- Benchmarked (libvips thumbnails): the M1 at 6 cores ≈ **38 thumbs/s** vs the
+  R720 worker at 12 cores ≈ **29** — ~6× faster per core, and wins aggregate
+  despite half the cores. (Bumped the M1 VM 4→6 cores; past 6 hits its weaker
+  efficiency cores, diminishing returns.)
+
+### Immich: FamilyHomeMedia library, OCR off, resource tuning
+- Added a read-only NFS external library for `/mnt/user/FranData/FamilyHomeMedia`
+  (mounted at `/mnt/external/FamilyHomeMedia`; `Family Photos` = ~50,940 assets).
+- **Disabled the OCR ML job** — the P4's 8 GB VRAM can't hold face + CLIP + OCR
+  at once (ONNX/CUBLAS OOM, face detection failing); face + smart search run
+  clean without it. (Re-enable later as a separate pass if wanted.)
+- Tuned `immich-machine-learning` (CPU 2→6) and `immich-server` CPU during the
+  import; worker-1 VM bumped 8→12 cores on the R720 before the move to the M1.
+
 ## 2026-06-24
 
 ### Exposed the Rook-Ceph dashboard
