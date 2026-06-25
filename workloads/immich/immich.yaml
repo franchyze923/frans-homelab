@@ -401,10 +401,15 @@ spec:
       labels:
         app: immich-server
     spec:
-      # Pin to the near-idle worker so the import jobs + API have a whole node's
-      # worth of CPU (worker-2 was saturated, starving the API -> UI hangs).
+      # Pinned to the M1 Mac node (arm64) -- fast cores for thumbnails/metadata.
+      # Tolerates the node's arch=arm64 taint; sized for the 4-core/6Gi VM.
       nodeSelector:
-        kubernetes.io/hostname: k8s-cluster-prod-worker-1
+        kubernetes.io/hostname: mac-m1-worker
+      tolerations:
+        - key: arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
       containers:
         - name: immich-server
           image: ghcr.io/immich-app/immich-server:v2.7.5
@@ -455,10 +460,10 @@ spec:
             # of the 8-core node so jobs run hard without starving the API.
             requests:
               memory: "1Gi"
-              cpu: "4"
+              cpu: "1"
             limits:
-              memory: "4Gi"
-              cpu: "11"
+              memory: "3Gi"
+              cpu: "3"
       volumes:
         - name: data
           persistentVolumeClaim:
