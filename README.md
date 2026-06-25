@@ -182,6 +182,23 @@ after which the OSD can't find its disk and the pod fails in the `activate` init
 and restart the pod. Data is safe (BlueStore is intact on disk); the OSD just
 needs the right path.
 
+### Ceph CSI on the arm64 (M1) node
+
+The M1 Mac node carries an `arch=arm64:NoSchedule` taint (reserves it for
+deliberate placement). The rook CSI plugin DaemonSets have no tolerations by
+default, so they won't schedule there — meaning no Ceph volumes on the M1 —
+until you add a toleration via the operator config (out-of-band):
+
+```sh
+kubectl -n rook-ceph patch cm rook-ceph-operator-config --type merge \
+  -p '{"data":{"CSI_PLUGIN_TOLERATIONS":"- effect: NoSchedule\n  key: arch\n  operator: Equal\n  value: arm64\n"}}'
+kubectl -n rook-ceph rollout restart deploy rook-ceph-operator
+```
+
+Also: the arm64 node needs the `rbd` kernel module (`echo rbd | sudo tee
+/etc/modules-load.d/rbd.conf`) or the RBD CSI plugin crashloops on
+`modprobe rbd`.
+
 ### Ceph dashboard SSL (for `ceph.franpolignano.com`)
 
 The `HTTPRoute` is in Git (`workloads/ceph-dashboard/`) but the dashboard's SSL
