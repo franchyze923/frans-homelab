@@ -25,12 +25,42 @@ To deploy: edit/add manifests, commit, push. Argo syncs within a few minutes
 ## Cluster
 
 - **kubeadm** cluster: 1 control-plane + 2 workers (Rocky Linux) + 1 GPU node
-  (`ubuntu24-gpu-box`, Ubuntu, Tesla P4).
+  (`ubuntu24-gpu-box`, Ubuntu, Tesla P4) + 1 arm64 node (`mac-m1-worker`, an M1
+  Mac VM). **Mixed-architecture** (4× amd64 + 1× arm64).
+- **Proxmox host:** Dell R720, dual Xeon E5-2660 v2 (20c/40t), runs the k8s VMs
+  off a single NVMe (`speedy-nvme-drive`).
 - **Cilium** CNI (no kube-proxy); **Cilium Gateway API** for ingress + LB IPAM.
 - **Rook-Ceph** for block storage (`rook-ceph-block` / RBD) — 3 OSDs (one per
-  node, on the NVMe), `size=2` replication, ~210 GiB usable. Manually managed
-  (not in Git); dashboard at `ceph.franpolignano.com`.
-- **Unraid** NAS (`192.168.40.116`) over NFS for media + config backups.
+  R720 node, on the NVMe), `size=2` replication, ~210 GiB usable. Manually
+  managed (not in Git); dashboard at `ceph.franpolignano.com`.
+- **Unraid** NAS (`192.168.40.116`) over NFS for media + config backups — below.
+
+## NAS / Unraid storage (`192.168.40.116`)
+
+Unraid **7.3.1** — the cluster mounts it over NFS for bulk media + nightly config
+backups (anything too big or recreatable to keep on Ceph).
+
+| Storage | FS | Size | Role |
+|---|---|---|---|
+| `disk1` | XFS | 11 TB (~8 TB used) | parity-protected array |
+| `disk2` | XFS | 11 TB (~7 TB used) | parity-protected array |
+| `cache` | btrfs | 476 GB SSD | write-cache pool |
+| `/mnt/user` | shfs (FUSE) | 22 TB | merged view, NFS-exported |
+
+- **NFS export:** `/mnt/user/FranData` (rw, `all_squash`, anonuid=99/anongid=100).
+  Cluster mounts subfolders of it:
+  - `FranData/immich` — Immich originals (library)
+  - `FranData/immich-encoded-video` — Immich transcodes (moved off Ceph)
+  - `FranData/FranHomeMedia`, `FranData/FamilyHomeMedia` — Immich external libraries (read-only)
+  - `FranData/FranMedia` — Plex / Jellyfin media
+  - `FranData/FranArchives/k8s-pvs/<app>` — nightly PVC config backups
+- **⚠️ Stale NFS handles:** `/mnt/user` is **shfs (FUSE)**, which hands out
+  *unstable* NFS file handles — when the **mover** shuffles a file cache→array
+  (or shfs recycles an inode), the kubelet's cached handle goes `ESTALE` and only
+  a pod recreate remounts it. Mitigations: (1) **FranData set to array-only**
+  (`shareUseCache="no"`) so the mover stops churning files — the dominant trigger;
+  (2) **`nfs-mount-healer`** auto-restarts affected pods. True zero-stale fix
+  would be SMB (no file-handle concept) — not done.
 
 ## Applications
 
