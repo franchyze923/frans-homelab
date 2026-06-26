@@ -475,7 +475,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting grafana storage backup..."; tar czf /storage-backup/backup.tar.gz -C /storage . 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              command: ['sh', '-c', 'echo "Starting grafana storage backup..."; tar czf /storage-backup/backup.tar.gz -C /storage . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
               volumeMounts:
                 - name: storage
                   mountPath: /storage
