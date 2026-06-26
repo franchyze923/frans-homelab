@@ -73,7 +73,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /data-backup/. /data/; chown -R 1000:1000 /data; echo "Restore complete."; else echo "Data exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /data-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /data-backup/backup.tar.gz -C /data; chown -R 1000:1000 /data; elif [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /data-backup/. /data/; chown -R 1000:1000 /data; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
           volumeMounts:
             - name: data
               mountPath: /data
@@ -300,7 +300,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting elasticsearch data backup..."; cp -r /data/. /data-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")"']
+              command: ['sh', '-c', 'echo "Starting elasticsearch data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
               volumeMounts:
                 - name: data
                   mountPath: /data

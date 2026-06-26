@@ -183,7 +183,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ ! -d /config/Library ] && [ -d /config-backup/Library ]; then echo "No Plex config found, restoring from NFS backup..."; cp -a /config-backup/. /config/; chown -R 1000:1000 /config; echo "Restore complete."; else echo "Config exists, skipping restore."; fi']
+          command: ['sh', '-c', 'if [ ! -d /config/Library ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring Plex from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; chown -R 1000:1000 /config; elif [ -d /config-backup/Library ]; then echo "Restoring Plex from legacy backup..."; cp -a /config-backup/. /config/; chown -R 1000:1000 /config; fi; else echo "Config exists, skipping restore."; fi']
           volumeMounts:
             - name: config
               mountPath: /config
@@ -286,7 +286,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")"']
+              command: ['sh', '-c', 'echo "Starting Plex config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
               volumeMounts:
                 - name: config
                   mountPath: /config

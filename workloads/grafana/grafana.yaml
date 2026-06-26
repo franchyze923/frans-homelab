@@ -368,7 +368,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /storage-backup/. /storage/; chown -R 472:472 /storage; echo "Restore complete."; else echo "Storage exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /storage -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /storage-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /storage-backup/backup.tar.gz -C /storage; chown -R 472:472 /storage; elif [ -n "$(ls -A /storage-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /storage-backup/. /storage/; chown -R 472:472 /storage; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
           volumeMounts:
             - name: storage
               mountPath: /storage
@@ -475,7 +475,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting grafana storage backup..."; cp -r /storage/. /storage-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")"']
+              command: ['sh', '-c', 'echo "Starting grafana storage backup..."; tar czf /storage-backup/backup.tar.gz -C /storage . 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
               volumeMounts:
                 - name: storage
                   mountPath: /storage

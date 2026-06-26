@@ -180,7 +180,7 @@ spec:
       initContainers:
         - name: restore-config
           image: busybox:latest
-          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ] && [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from NFS backup..."; cp -r /config-backup/. /config/; chown -R 1000:1000 /config; echo "Restore complete."; else echo "Config exists or no backup, skipping."; fi']
+          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; chown -R 1000:1000 /config; elif [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /config-backup/. /config/; chown -R 1000:1000 /config; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
           volumeMounts:
             - name: config
               mountPath: /config
@@ -293,7 +293,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting jellyfin config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")"']
+              command: ['sh', '-c', 'echo "Starting jellyfin config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
               volumeMounts:
                 - name: config
                   mountPath: /config
