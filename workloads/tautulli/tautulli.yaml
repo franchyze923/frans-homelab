@@ -64,6 +64,8 @@ spec:
   selector:
     matchLabels:
       app: tautulli
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:

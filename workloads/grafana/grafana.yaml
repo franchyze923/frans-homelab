@@ -358,6 +358,8 @@ spec:
   selector:
     matchLabels:
       app: grafana
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
