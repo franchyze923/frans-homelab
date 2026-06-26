@@ -2,6 +2,34 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-26
+
+### Overhauled the config-backup jobs (all apps)
+The nightly backup CronJobs (plex, jellyfin, radarr, sonarr, sabnzbd, metube,
+heimdall, keycloak, grafana, tautulli, elasticsearch) were reworked:
+
+- **tar+gzip to a single `backup.tar.gz`** instead of `cp -r` of thousands of
+  small files — far faster over NFS (Plex went from a ~56-min per-file copy to
+  one stream) and compressed. Restore untars it, with a **legacy fallback** to
+  the old loose-file copy so a disaster-restore still works during the switch.
+- **Logs the destination** each run, e.g. `--> backed up to:
+  192.168.40.116:/mnt/user/FranData/FranArchives/k8s-pvs/<app>/backup.tar.gz`.
+- **Real failure detection** — backup containers switched to `debian` (GNU tar)
+  so the job actually **fails** on tar exit ≥2 (NFS down, disk full) while
+  tolerating exit 1 (live DB changing mid-read). The old `cp ... | tail -5`
+  masked failures behind a fake "Completed". Restore initContainers stay busybox.
+- **elasticsearch backup suspended** (`suspend: true`) — not needed.
+
+### Immich operational hardening
+- **OCR disabled** — the P4's 8 GB VRAM can't hold face + CLIP + OCR; OCR jobs
+  failed in a retry loop (ONNX `BFCArena` OOM) and the allocator held VRAM even
+  after, starving face detection. A ML-pod restart clears a stuck arena.
+- **immich-server memory limit 3→4 Gi** — OOMKilled on the 6 GB M1 VM under a
+  heavy import + software transcode + OCR load.
+- **Added immich to `nfs-mount-healer`** — its NFS mounts (library,
+  encoded-video, external libraries) now auto-recover from stale Unraid handles
+  like the other media apps.
+
 ## 2026-06-25
 
 ### Added an M1 Mac Mini as an arm64 cluster node
