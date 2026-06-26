@@ -286,7 +286,7 @@ spec:
           containers:
             - name: backup
               image: busybox:latest
-              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"']
+              command: ['sh', '-c', 'echo "Starting Plex config backup..."; cp -r /config/. /config-backup/ 2>&1 | tail -5; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")"']
               volumeMounts:
                 - name: config
                   mountPath: /config
