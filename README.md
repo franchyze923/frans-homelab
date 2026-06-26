@@ -137,8 +137,10 @@ Apps are reachable two ways:
   (gitignored via `**/secret.yaml`), with a committed template/README per app
   (e.g. `frigate`, `weight-dashboard`). Never commit a real `Secret` manifest
   into a `workloads/` dir — Argo would apply it.
-- **GPU:** the P4 is time-sliced (4 replicas) so multiple pods can request
-  `nvidia.com/gpu`. GPU consumers are pinned with `nodeSelector: gpu=true`.
+- **GPU:** **Tesla P4** — 8 GB GDDR5 VRAM, 2,560 CUDA cores (Pascal, 2016),
+  ~5.5 TFLOPS FP32 / ~22 TOPS INT8, 75 W single-slot, NVENC/NVDEC. Time-sliced
+  (4 replicas) so multiple pods can request `nvidia.com/gpu`; consumers pinned
+  with `nodeSelector: gpu=true` (frigate, immich-ML, ollama, plex).
 - **Stale NFS:** Unraid `/mnt/user` (shfs FUSE) drops NFS handles periodically;
   `nfs-mount-healer` auto-recovers affected media pods.
 
