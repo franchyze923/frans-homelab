@@ -281,6 +281,7 @@ metadata:
   namespace: elk
 spec:
   schedule: "35 1 * * *"
+  suspend: true   # disabled -- elasticsearch backup not needed
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
