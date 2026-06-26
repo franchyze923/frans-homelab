@@ -28,7 +28,23 @@ heimdall, keycloak, grafana, tautulli, elasticsearch) were reworked:
   heavy import + software transcode + OCR load.
 - **Added immich to `nfs-mount-healer`** — its NFS mounts (library,
   encoded-video, external libraries) now auto-recover from stale Unraid handles
-  like the other media apps.
+  like the other media apps (confirmed working — it caught a stale handle and
+  restarted immich within minutes instead of letting it get stuck).
+
+### Tackled the recurring Unraid NFS stale-handle issue at the source
+Root-caused the long-running `Stale file handle` problem (see the
+unraid-nfs-stale-handles memory): `/mnt/user` is **shfs (FUSE)**, which gives out
+unstable NFS file handles, and the **mover** shuffling files cache→array is the
+main trigger. Confirmed `immich-encoded-video` was split across cache *and*
+disk2 — proof the mover was actively churning Immich's transcodes.
+
+- **Fix applied:** set the `FranData` share to **array-only** (`shareUseCache="no"`)
+  so new writes skip the cache and the mover stops moving files → kills the
+  dominant stale trigger. Existing ~24 GB on cache stays put (stable) until the
+  next mover sweep relocates it once.
+- Mitigation, not a cure — shfs can still rarely recycle an inode; the healer
+  remains the safety net. True zero-stale fix is SMB (no file-handle concept).
+- Documented the full NAS drive/share layout in the README.
 
 ## 2026-06-25
 
