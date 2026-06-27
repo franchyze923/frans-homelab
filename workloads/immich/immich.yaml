@@ -401,15 +401,34 @@ spec:
       labels:
         app: immich-server
     spec:
-      # Pinned to the M1 Mac node (arm64) -- fast cores for thumbnails/metadata.
-      # Tolerates the node's arch=arm64 taint; sized for the 4-core/6Gi VM.
-      nodeSelector:
-        kubernetes.io/hostname: mac-m1-worker
+      # PREFER the M1 (fast arm64 cores) but don't hard-pin -- if the M1 is
+      # NotReady/unschedulable, fall over to any other node instead of hanging.
+      # (Immich's image is multi-arch, so it runs fine on the amd64 nodes too.)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: [mac-m1-worker]
       tolerations:
+        # tolerate the M1's arm64 taint (so it CAN land there)
         - key: arch
           operator: Equal
           value: arm64
           effect: NoSchedule
+        # if a node goes unreachable/not-ready, evict + reschedule after 60s
+        # (default is 300s) so failover off the M1 is quicker
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 60
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 60
       containers:
         - name: immich-server
           image: ghcr.io/immich-app/immich-server:v2.7.5
