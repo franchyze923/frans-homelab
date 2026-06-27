@@ -24,6 +24,21 @@ sleeping despite the Energy-settings checkbox).
   first — ~6 min, k8s-enforced — so failover is automatic but not instant, and it
   doesn't auto-move back to the M1 on recovery.)
 
+### Immich database backups → NFS (disaster-safe)
+Immich's built-in nightly DB dump goes to `/data/backups` — but that's on the
+**same Ceph volume as the live data**, so a cluster/Ceph loss takes both (a copy,
+not a backup). Added `workloads/immich/db-backup.yaml`:
+
+- **`immich-db-backup` CronJob** (daily 3am) runs Immich's documented
+  `pg_dumpall` (using the matching VectorChord postgres image) **straight to NFS**
+  (`FranData/FranArchives/k8s-pvs/immich`), keeps the last 7, `pipefail` so it
+  truly fails on error. Connects to the postgres service (no RWO mount conflict
+  with the live pod). Tested: a manual run produced a ~716 MB dump on the NAS.
+- **Restore procedure documented inline** (incl. the pgvecto-rs `search_path`
+  `sed` fix). Now the DB (faces, embeddings, metadata) survives a cluster rebuild.
+- Still uncovered (separate 3-2-1 concern): the **photo originals** live only on
+  the NAS — a NAS failure loses them; no off-NAS copy yet.
+
 ## 2026-06-26
 
 ### Overhauled the config-backup jobs (all apps)
