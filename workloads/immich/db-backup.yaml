@@ -3,7 +3,17 @@
 # Immich's built-in backup dumps to /data/backups, but that's on the same Ceph
 # volume as the live data -- a cluster/Ceph loss takes both. This CronJob runs
 # Immich's documented `pg_dumpall` straight to the NAS so the DB (faces,
-# embeddings, all metadata) survives a cluster rebuild. Restore steps: README.
+# embeddings, all metadata) survives a cluster rebuild.
+#
+# RESTORE (into a FRESH/empty immich-postgres, BEFORE immich-server starts):
+#   1. kubectl -n immich scale deploy/immich-server --replicas=0
+#      (start from an empty DB -- fresh immich-postgres PVC, or drop+recreate)
+#   2. grab the dump from the NAS, then load it (the sed is the pgvecto-rs /
+#      VectorChord search_path fix, per Immich's docs):
+#        gunzip < immich-db-backup-<ts>.sql.gz \
+#          | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
+#          | kubectl -n immich exec -i deploy/immich-postgres -- psql -U postgres -d postgres
+#   3. kubectl -n immich scale deploy/immich-server --replicas=1
 # ---------------------------------------------------------------------------
 apiVersion: v1
 kind: PersistentVolume
