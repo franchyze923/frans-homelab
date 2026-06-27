@@ -2,6 +2,28 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-27
+
+### Immich availability: stop the M1 node from taking it down overnight
+Two mornings in a row Immich was broken — immich-server stuck (one pod
+Terminating, one Pending). Root cause: the **M1 node is a UTM VM on the Mac**, and
+**macOS was sleeping overnight**, which suspended the VM → node `NotReady` →
+immich-server (hard-pinned to it, with an RWO Ceph volume) couldn't terminate or
+reschedule. Confirmed via `pmset -g log` (hourly `darkwake` events = the Mac was
+sleeping despite the Energy-settings checkbox).
+
+- **Mac fix (out-of-band):** `sudo pmset -a disablesleep 1` + `sleep 0` +
+  `powernap 0` — the real always-on switch (the GUI toggle wasn't holding). Plus
+  auto-start the UTM VM so it self-recovers.
+- **Cluster fix (in Git):** immich-server changed from a **hard
+  `nodeSelector: mac-m1-worker`** (M1-only → hung when the M1 was down) to a
+  **soft node-affinity preference** (weight 100 for the M1) + faster
+  `unreachable`/`not-ready` eviction tolerations (60s vs 300s). It now **prefers**
+  the M1 but **fails over to an amd64 node** if the M1 is `NotReady` instead of
+  hanging. (Caveat: the RWO Ceph volume must force-detach from the dead node
+  first — ~6 min, k8s-enforced — so failover is automatic but not instant, and it
+  doesn't auto-move back to the M1 on recovery.)
+
 ## 2026-06-26
 
 ### Overhauled the config-backup jobs (all apps)
