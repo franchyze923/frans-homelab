@@ -44,6 +44,9 @@ data:
           - ffmpeg:http://192.168.100.198/flv?port=1935&app=bcs&stream=channel0_main.bcs&user=admin&password={FRIGATE_REOLINK_PASSWORD}#video=copy#audio=copy#audio=opus
         your_reolink_camera_sub:
           - ffmpeg:http://192.168.100.198/flv?port=1935&app=bcs&stream=channel0_ext.bcs&user=admin&password={FRIGATE_REOLINK_PASSWORD}
+        # Second Reolink at .6 -- LIVE VIEW ONLY (no record/detect/snapshots).
+        reolink_2:
+          - ffmpeg:http://192.168.100.6/flv?port=1935&app=bcs&stream=channel0_main.bcs&user=fran2&password={FRIGATE_REOLINK2_PASSWORD}#video=copy#audio=copy#audio=opus
 
     cameras:
       your_reolink_camera:
@@ -67,6 +70,19 @@ data:
             days: 1
           motion:
             days: 0
+      reolink_2:
+        ffmpeg:
+          inputs:
+            - path: rtsp://127.0.0.1:8554/reolink_2
+              input_args: preset-rtsp-restream
+              roles:
+                - detect
+        detect:
+          enabled: false
+        record:
+          enabled: false
+        snapshots:
+          enabled: false
 
     detect:
       enabled: true
