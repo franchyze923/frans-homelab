@@ -49,7 +49,7 @@ Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest pe
 - **Storage:** 250 GB 850 EVO SSD + 4 TB Toshiba HDD (LVM-thin) + DVD-RW
 - ⚠️ Board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
 
-#### `UnraidBackup` — Intel S2600GZ · `192.168.40.116`
+#### `UnraidBackup` — Dell EMC Avamar datastore (Intel S2600GZ board) · `192.168.40.116`
 NAS — bulk media + nightly config backups, NFS-exported to the cluster.
 
 - **CPU:** Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT)
