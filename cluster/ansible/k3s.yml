@@ -1,0 +1,177 @@
+---
+# k3s Cluster Installation Playbook
+# Usage: ansible-playbook k3s.yml [-e k8s_version=1.30]
+
+- name: Prepare all nodes
+  hosts: k8s_cluster
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to be available
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 10
+
+    - name: Gather facts after SSH is ready
+      ansible.builtin.setup:
+
+    - name: Check if firewalld is installed
+      ansible.builtin.command: systemctl list-unit-files firewalld.service
+      register: firewalld_check
+      changed_when: false
+      failed_when: false
+
+    - name: Disable firewalld
+      ansible.builtin.systemd:
+        name: firewalld
+        state: stopped
+        enabled: false
+      when: firewalld_check.rc == 0 and 'firewalld.service' in firewalld_check.stdout
+
+    - name: Wait for NTP sync
+      ansible.builtin.shell: timedatectl show -p NTPSynchronized --value
+      register: ntp_sync
+      until: ntp_sync.stdout == "yes"
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Wait for cloud-init to complete
+      ansible.builtin.shell: cloud-init status | grep -qE 'done|error'
+      register: cloud_init_result
+      until: cloud_init_result.rc == 0
+      retries: 60
+      delay: 10
+      changed_when: false
+
+    - name: Create user fran with sudo access
+      ansible.builtin.user:
+        name: fran
+        password: "{{ 'REDACTED' | password_hash('sha512') }}"
+        groups: wheel
+        append: true
+        shell: /bin/bash
+
+    - name: Enable password authentication for SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+      notify: Restart sshd
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted
+
+- name: Install k3s server on master
+  hosts: master
+  tasks:
+    - name: Check if k3s is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Install k3s server (without flannel for Cilium)
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | {% if k8s_version | default('') != '' %}INSTALL_K3S_CHANNEL="v{{ k8s_version }}" {% endif %}sh -s - server \
+          --disable=traefik \
+          --disable=servicelb \
+          --flannel-backend=none \
+          --disable-network-policy \
+          --write-kubeconfig-mode=644
+      args:
+        creates: /usr/local/bin/k3s
+      when: not k3s_binary.stat.exists
+
+    - name: Wait for k3s API to be ready
+      ansible.builtin.command: /usr/local/bin/k3s kubectl get nodes
+      changed_when: false
+      retries: 10
+      delay: 5
+      register: result
+      until: result.rc == 0
+
+    - name: Get k3s token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_token
+
+    - name: Set token fact
+      ansible.builtin.set_fact:
+        k3s_token: "{{ k3s_token.content | b64decode | trim }}"
+
+    - name: Get master IP
+      ansible.builtin.set_fact:
+        k3s_master_ip: "{{ ansible_host }}"
+
+- name: Install k3s agents on workers
+  hosts: workers
+  tasks:
+    - name: Check if k3s-agent is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Install k3s agent
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | {% if k8s_version | default('') != '' %}INSTALL_K3S_CHANNEL="v{{ k8s_version }}" {% endif %}K3S_URL="https://{{ hostvars[groups['master'][0]]['k3s_master_ip'] }}:6443" \
+          K3S_TOKEN="{{ hostvars[groups['master'][0]]['k3s_token'] }}" \
+          sh -s - agent
+      args:
+        creates: /usr/local/bin/k3s
+      when: not k3s_binary.stat.exists
+
+- name: Verify cluster and fetch kubeconfig
+  hosts: master
+  tasks:
+    - name: Wait for all nodes to register (not Ready yet - needs CNI)
+      ansible.builtin.shell: |
+        /usr/local/bin/k3s kubectl get nodes --no-headers | wc -l
+      register: node_count
+      until: node_count.stdout | int >= 3
+      retries: 20
+      delay: 10
+      changed_when: false
+
+    - name: Get cluster nodes
+      ansible.builtin.command: /usr/local/bin/k3s kubectl get nodes -o wide
+      changed_when: false
+      register: nodes_output
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_output.stdout_lines }}"
+
+    - name: Setup kubeconfig for rocky user
+      block:
+        - name: Create .kube directory for rocky
+          ansible.builtin.file:
+            path: /home/rocky/.kube
+            state: directory
+            owner: rocky
+            group: rocky
+            mode: '0700'
+
+        - name: Copy kubeconfig for rocky user
+          ansible.builtin.copy:
+            src: /etc/rancher/k3s/k3s.yaml
+            dest: /home/rocky/.kube/config
+            owner: rocky
+            group: rocky
+            mode: '0600'
+            remote_src: true
+
+    - name: Fetch kubeconfig
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: ../kubeconfig
+        flat: true
+
+    - name: Update kubeconfig with master IP
+      ansible.builtin.replace:
+        path: ../kubeconfig
+        regexp: '127\.0\.0\.1'
+        replace: "{{ ansible_host }}"
+      delegate_to: localhost
+      become: false

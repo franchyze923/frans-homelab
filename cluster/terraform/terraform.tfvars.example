@@ -1,0 +1,8 @@
+# Proxmox Credentials (sensitive - keep in terraform.tfvars, not config.yml)
+# Copy this to terraform.tfvars and fill in your values
+
+proxmox_password = "your-proxmox-password"
+ssh_public_key   = "ssh-rsa AAAA... your-public-key"
+
+# Optional: cloud-init password (default: changeme123)
+# ci_password = "your-vm-password"

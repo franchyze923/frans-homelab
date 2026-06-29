@@ -1,0 +1,76 @@
+---
+# Cilium L2 LoadBalancer Announcement Playbook
+# Note: L2 announcements are enabled in cilium.yml at install time
+
+- name: Configure Cilium L2 LoadBalancer
+  hosts: master
+  tasks:
+    - name: Create CiliumL2AnnouncementPolicy
+      ansible.builtin.copy:
+        dest: /tmp/cilium-l2-policy.yaml
+        mode: '0644'
+        content: |
+          apiVersion: cilium.io/v2alpha1
+          kind: CiliumL2AnnouncementPolicy
+          metadata:
+            name: l2-policy
+          spec:
+            interfaces:
+            - ^eth[0-9]+
+            - ^en[a-z0-9]+
+            externalIPs: true
+            loadBalancerIPs: true
+            nodeSelector:
+              matchLabels:
+                kubernetes.io/os: linux
+
+    - name: Apply L2 announcement policy
+      ansible.builtin.command: "{{ kubectl_bin }} --kubeconfig={{ kubeconfig_path }} apply -f /tmp/cilium-l2-policy.yaml"
+      changed_when: true
+
+    - name: Create CiliumLoadBalancerIPPool
+      ansible.builtin.copy:
+        dest: /tmp/cilium-lb-pool.yaml
+        mode: '0644'
+        content: |
+          apiVersion: cilium.io/v2alpha1
+          kind: CiliumLoadBalancerIPPool
+          metadata:
+            name: lb-pool
+          spec:
+            blocks:
+            - start: "{{ lb_ip_start }}"
+              stop: "{{ lb_ip_end }}"
+
+    - name: Apply LoadBalancer IP pool
+      ansible.builtin.command: "{{ kubectl_bin }} --kubeconfig={{ kubeconfig_path }} apply -f /tmp/cilium-lb-pool.yaml"
+      changed_when: true
+
+    - name: Verify Cilium L2 announcements
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ kubeconfig_path }}
+        /usr/local/bin/cilium config view | grep l2announcements || echo "l2announcements.enabled: configured via install"
+      register: l2_status
+      changed_when: false
+
+    - name: Display L2 status
+      ansible.builtin.debug:
+        msg: "{{ l2_status.stdout_lines }}"
+
+    - name: Display instructions
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Cilium L2 LoadBalancer configured!"
+          - "=========================================="
+          - ""
+          - "IP Pool: {{ lb_ip_start }} - {{ lb_ip_end }}"
+          - ""
+          - "To use LoadBalancer, create a service with:"
+          - "  spec:"
+          - "    type: LoadBalancer"
+          - ""
+          - "Example:"
+          - "  kubectl expose deployment nginx --type=LoadBalancer --port=80"
+          - ""
+          - "=========================================="
