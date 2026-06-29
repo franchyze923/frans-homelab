@@ -401,9 +401,10 @@ spec:
       labels:
         app: immich-server
     spec:
-      # PREFER the M1 (fast arm64 cores) but don't hard-pin -- if the M1 is
+      # PREFER the new Ryzen node (ubuntu-26-desktop-node) -- fastest cores in the
+      # cluster (Zen2) on its own dedicated host -- but don't hard-pin: if it's
       # NotReady/unschedulable, fall over to any other node instead of hanging.
-      # (Immich's image is multi-arch, so it runs fine on the amd64 nodes too.)
+      # (Immich's image is multi-arch, so it runs fine on any node.)
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -412,7 +413,7 @@ spec:
                 matchExpressions:
                   - key: kubernetes.io/hostname
                     operator: In
-                    values: [mac-m1-worker]
+                    values: [ubuntu-26-desktop-node]
       tolerations:
         # tolerate the M1's arm64 taint (so it CAN land there)
         - key: arch
