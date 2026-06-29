@@ -1,0 +1,66 @@
+# Generic device plugin (squat/generic-device-plugin) — exposes the AMD
+# Radeon RX 570's DRM render node (/dev/dri/renderD128) to pods so they can do
+# VA-API hardware transcoding (H.264/HEVC encode+decode). The RX 570 is
+# PCI-passed-through to VM 100 (`ubuntu-26-desktop-node`); this advertises it as
+# `squat.ai/dri`, count 4 (shareable by up to 4 pods, like the P4's time-slicing
+# — there's no hard isolation, so keep concurrent transcodes sane).
+#
+# Pinned (nodeSelector gpu-amd=true) to the only node with the card. Consumers
+# request `squat.ai/dri: "1"` and the plugin injects /dev/dri/renderD128.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: generic-device-plugin
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: generic-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: generic-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: generic-device-plugin
+    spec:
+      priorityClassName: system-node-critical
+      nodeSelector:
+        gpu-amd: "true"
+      tolerations:
+        - operator: Exists
+          effect: NoExecute
+        - operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: generic-device-plugin
+          image: ghcr.io/squat/generic-device-plugin:latest
+          args:
+            - --device
+            - |
+              {"name": "dri", "groups": [{"count": 4, "paths": [{"path": "/dev/dri/renderD128"}]}]}
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
