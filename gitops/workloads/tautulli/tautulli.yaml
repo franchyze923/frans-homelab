@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tautulli
+---
+# Config on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tautulli-config
+  namespace: tautulli
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tautulli-config-backup-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/tautulli
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tautulli-config-backup
+  namespace: tautulli
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: tautulli-config-backup-pv
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tautulli
+  namespace: tautulli
+  labels:
+    app: tautulli
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tautulli
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: tautulli
+    spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; elif [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /config-backup/. /config/; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
+      containers:
+        - name: tautulli
+          image: lscr.io/linuxserver/tautulli:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 8181
+              name: http
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: tautulli-config
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: tautulli-config-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tautulli
+  namespace: tautulli
+  labels:
+    app: tautulli
+spec:
+  type: ClusterIP
+  selector:
+    app: tautulli
+  ports:
+    - port: 8181
+      targetPort: 8181
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tautulli
+  namespace: tautulli
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - tautulli.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: tautulli
+          port: 8181
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tautulli-config-backup
+  namespace: tautulli
+spec:
+  schedule: "20 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: tautulli
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting tautulli config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: tautulli-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: tautulli-config-backup

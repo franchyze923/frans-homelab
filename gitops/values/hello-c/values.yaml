@@ -1,0 +1,17 @@
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: "1.25"
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: false
+
+extraArgs:
+  - /bin/sh
+  - -c
+  - echo 'Hello from C via HELM!' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'

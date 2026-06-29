@@ -1,0 +1,95 @@
+# ---------------------------------------------------------------------------
+# Immich database backup -> NFS (disaster-safe, OFF Ceph).
+# Immich's built-in backup dumps to /data/backups, but that's on the same Ceph
+# volume as the live data -- a cluster/Ceph loss takes both. This CronJob runs
+# Immich's documented `pg_dumpall` straight to the NAS so the DB (faces,
+# embeddings, all metadata) survives a cluster rebuild.
+#
+# RESTORE (into a FRESH/empty immich-postgres, BEFORE immich-server starts):
+#   1. kubectl -n immich scale deploy/immich-server --replicas=0
+#      (start from an empty DB -- fresh immich-postgres PVC, or drop+recreate)
+#   2. grab the dump from the NAS, then load it (the sed is the pgvecto-rs /
+#      VectorChord search_path fix, per Immich's docs):
+#        gunzip < immich-db-backup-<ts>.sql.gz \
+#          | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
+#          | kubectl -n immich exec -i deploy/immich-postgres -- psql -U postgres -d postgres
+#   3. kubectl -n immich scale deploy/immich-server --replicas=1
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-db-backup-pv
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions: [hard, noresvport, timeo=600, retrans=5]
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/immich
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-db-backup
+  namespace: immich
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: immich-db-backup-pv
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: immich-db-backup
+  namespace: immich
+spec:
+  schedule: "0 3 * * *"          # 3am daily (after Immich's own 2am dump)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pgdump
+              # same image as the DB -> matching pg_dumpall + VectorChord extension
+              image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: immich-secrets
+                      key: DB_PASSWORD
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  ts=$(date -u +%Y%m%dT%H%M%S)
+                  out=/backup/immich-db-backup-${ts}.sql.gz
+                  echo "[$(date -u +%H:%M:%S)] pg_dumpall immich DB -> $out"
+                  # pipefail makes the job FAIL if pg_dumpall errors (not just gzip)
+                  pg_dumpall --clean --if-exists -U postgres -h immich-postgres | gzip > "$out"
+                  echo "--> backed up to: 192.168.40.116:/mnt/user/FranData/FranArchives/k8s-pvs/immich/$(basename "$out") ($(du -h "$out" | cut -f1))"
+                  # retention: keep the 7 most recent
+                  ls -1t /backup/immich-db-backup-*.sql.gz | tail -n +8 | xargs -r rm -f
+                  echo "retained:"; ls -lh /backup/immich-db-backup-*.sql.gz
+              resources:
+                requests: {memory: "128Mi", cpu: "100m"}
+                limits: {memory: "512Mi", cpu: "1"}
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: immich-db-backup

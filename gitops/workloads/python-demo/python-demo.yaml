@@ -1,0 +1,196 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: python-demo
+---
+# ConfigMap #1: the string the server returns.
+# This is the value you curl for. Change it here, re-sync, and the
+# server returns the new message — no image rebuild needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: python-demo-message
+  namespace: python-demo
+data:
+  MESSAGE: "Fran is the man"
+---
+# PVC: persistent storage backed by Ceph. Unlike the emptyDir, the data
+# here survives pod deletion/rescheduling -- that's what makes the
+# persistent counter keep climbing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: python-demo-pvc
+  namespace: python-demo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 1Gi
+---
+# ConfigMap #2: the Python program itself.
+# Mounting the script via a ConfigMap means we can use the stock
+# python image and still ship our own code into the container.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: python-demo-app
+  namespace: python-demo
+data:
+  server.py: |
+    import os
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    # For the single-threaded version below, use instead:
+    # from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    # The message comes from ConfigMap #1, passed in as an env var.
+    MESSAGE = os.environ.get("MESSAGE", "no message configured")
+
+    # Lock guards the counter's read-modify-write so concurrent
+    # requests (threaded server) don't race. Not needed single-threaded.
+    counter_lock = threading.Lock()
+
+    # Two counters on two different volumes, to compare storage types:
+    #
+    #   /data       -> emptyDir  = EPHEMERAL. Wiped when the pod is
+    #                  deleted/rescheduled. This counter resets to 1.
+    #   /persistent -> PVC       = PERSISTENT. Backed by Ceph storage that
+    #                  outlives the pod. This counter keeps climbing even
+    #                  after you delete the pod.
+    #
+    # (The /app mount holding this script is read-only, so neither counter
+    # can live there -- each needs its own writable volume.)
+    EPHEMERAL_FILE = "/data/counter.txt"
+    PERSISTENT_FILE = "/persistent/counter.txt"
+
+    def bump(path):
+        # Read-modify-write a counter file, returning the new value.
+        # The lock makes this safe under the threaded server.
+        with counter_lock:
+            count = 0
+            if os.path.exists(path):
+                count = int(open(path).read().strip())
+            count += 1
+            open(path, "w").write(str(count))
+            return count
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            # Only count the root path. Browsers also request
+            # /favicon.ico on every page load, which would otherwise
+            # bump the counters twice per visit.
+            if self.path != "/":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            ephemeral = bump(EPHEMERAL_FILE)
+            persistent = bump(PERSISTENT_FILE)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            body = (
+                f"{MESSAGE}\n"
+                f"ephemeral count (emptyDir): {ephemeral}\n"
+                f"persistent count (PVC):     {persistent}\n"
+            )
+            self.wfile.write(body.encode())
+
+    if __name__ == "__main__":
+        print("Serving on :8080 with message:", MESSAGE)
+        # Threaded: won't hang on browser keep-alive connections.
+        ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+
+        # Simplest case (single-threaded, one request at a time):
+        # HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+# Deployment: runs the stock python image and executes our script.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-demo
+  namespace: python-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-demo
+  template:
+    metadata:
+      labels:
+        app: python-demo
+    spec:
+      containers:
+        - name: python-demo
+          image: python:3.12-alpine
+          # How Python runs in the container: just invoke the
+          # interpreter against the script we mounted below.
+          command: ["python", "/app/server.py"]
+          ports:
+            - containerPort: 8080
+          # Inject the message string from ConfigMap #1 as an env var.
+          envFrom:
+            - configMapRef:
+                name: python-demo-message
+          volumeMounts:
+            - name: app
+              mountPath: /app
+            # Writable ephemeral scratch space for the emptyDir counter.
+            - name: data
+              mountPath: /data
+            # Persistent storage (PVC) for the counter that survives.
+            - name: persistent
+              mountPath: /persistent
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+              # Scratch disk the scheduler reserves for this pod.
+              ephemeral-storage: "100Mi"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+              # If writable layer + emptyDir exceed this, the kubelet
+              # evicts the pod (the storage equivalent of an OOMKill).
+              ephemeral-storage: "200Mi"
+      volumes:
+        # Mount the script ConfigMap (#2) at /app so the command above
+        # can find /app/server.py.
+        - name: app
+          configMap:
+            name: python-demo-app
+        # emptyDir = ephemeral volume tied to the pod's lifecycle.
+        # Survives a container restart, but is deleted when the pod is.
+        - name: data
+          emptyDir: {}
+        # PVC-backed volume = persistent; outlives the pod entirely.
+        - name: persistent
+          persistentVolumeClaim:
+            claimName: python-demo-pvc
+---
+# Service: exposes the server via a LoadBalancer.
+# The Cilium LB-IPAM sharing annotations let this service share one
+# external IP with other services that use the same sharing-key,
+# even across namespaces (e.g. gitea-ssh in the gitea namespace).
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-demo
+  namespace: python-demo
+  annotations:
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
+spec:
+  # External port moved 8080 -> 8088 on the shared platform IP (.201) so
+  # SABnzbd can take the standard :8080. App still listens on 8080 (targetPort).
+  type: LoadBalancer
+  selector:
+    app: python-demo
+  ports:
+    - port: 8088
+      targetPort: 8080
