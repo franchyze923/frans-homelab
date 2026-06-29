@@ -26,9 +26,22 @@ To deploy: edit/add manifests, commit, push. Argo syncs within a few minutes
 
 - **kubeadm** cluster: 1 control-plane + 2 workers (Rocky Linux) + 1 GPU node
   (`ubuntu24-gpu-box`, Ubuntu, Tesla P4) + 1 arm64 node (`mac-m1-worker`, an M1
-  Mac VM). **Mixed-architecture** (4× amd64 + 1× arm64).
-- **Proxmox host:** Dell R720, dual Xeon E5-2660 v2 (20c/40t), runs the k8s VMs
-  off a single NVMe (`speedy-nvme-drive`).
+  Mac VM) + 1 Ryzen node (`ubuntu-26-desktop-node`, Ubuntu 26.04, doubles as an
+  XFCE desktop). **Mixed-architecture** (5× amd64 + 1× arm64).
+- **Proxmox hosts (2):**
+  - **Dell R720**, dual Xeon E5-2660 v2 (20c/40t) — runs the control-plane + 2
+    Rocky workers + the M1 arm64 VM off a single NVMe (`speedy-nvme-drive`).
+  - **Gigabyte B450M / AMD Ryzen 5 3600** (6c/12t Zen2, 39 GiB) at
+    `192.168.40.9`, Proxmox VE 9.1 — a second, **standalone** host (not in a PVE
+    cluster) added 2026-06. It hosts **VM 100 `ubuntu-26-desktop-node`**
+    (8 vCPU / 16 GiB / 100 GiB on `local-lvm`, Ubuntu 26.04 cloud image, IP
+    `192.168.40.75`) which doubles as an **XFCE desktop** and a **kubeadm
+    worker** — the **fastest per-core CPU** in the cluster (Zen2 vs. the 2013
+    Xeons), so it's the preferred home for CPU-bound workloads. The host's SATA
+    DVD drive is passed through to the VM (`scsi2`, read-only) for ripping discs,
+    and it has a 3.6 TB external LVM-thin pool. ⚠️ The board ships with **SVM
+    (AMD-V) disabled in BIOS** even though the `svm` CPU flag shows — enable
+    *SVM Mode* (Settings→Miscellaneous) or `kvm_amd` won't load and no VM starts.
 - **Cilium** CNI (no kube-proxy); **Cilium Gateway API** for ingress + LB IPAM.
 - **Rook-Ceph** for block storage (`rook-ceph-block` / RBD) — 3 OSDs (one per
   R720 node, on the NVMe), `size=2` replication, ~210 GiB usable. Manually
