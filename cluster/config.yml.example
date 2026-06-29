@@ -1,0 +1,92 @@
+# Unified configuration for k8s deployment
+# Copy this file to config.yml and fill in your values
+# Sensitive credentials (passwords, SSH keys) should remain in terraform/terraform.tfvars
+
+# =============================================================================
+# Proxmox Settings
+# =============================================================================
+proxmox:
+  host: "192.168.x.x"            # Proxmox server IP
+  user: "root@pam"               # Proxmox username
+  node: "pve"                    # Proxmox node name
+  storage: "local-lvm"           # Storage pool for VMs
+  network_bridge: "vmbr0"        # Network bridge
+
+# =============================================================================
+# Cluster Settings
+# =============================================================================
+cluster:
+  name: "k8s"                    # VM name prefix (k8s-master, k8s-worker-1, etc.)
+  vm_id_start: 200               # Starting Proxmox VM ID
+  node_count: 3                  # Total nodes (1 master + N-1 workers)
+
+# =============================================================================
+# Kubernetes Settings
+# =============================================================================
+kubernetes:
+  distribution: "k3s"            # k3s or kubeadm
+  version: ""                    # Leave empty for latest, or specify e.g. "1.30"
+
+# =============================================================================
+# VM Resources
+# =============================================================================
+vm:
+  memory: 4096                   # RAM per VM in MB
+  cores: 2                       # CPU cores per VM
+  disk_size: 32                  # OS disk size in GB
+
+# =============================================================================
+# Networking
+# =============================================================================
+networking:
+  loadbalancer: "cilium"         # cilium or metallb
+  lb_ip_start: "192.168.x.200"   # LoadBalancer IP pool start
+  lb_ip_end: "192.168.x.220"     # LoadBalancer IP pool end
+
+# =============================================================================
+# Storage (Optional)
+# =============================================================================
+storage:
+  ceph_enabled: false            # Install Rook-Ceph storage
+  ceph_disk_size: 20             # Ceph OSD disk size in GB
+
+# =============================================================================
+# Applications (all deployed by default, set to false to skip)
+# =============================================================================
+apps:
+  dashboard: true                # Kubernetes Dashboard
+  demo_apps: true                # Demo nginx applications
+  argocd: true                   # Argo CD GitOps (deploys apps from app-of-apps repo, including Keycloak)
+
+# =============================================================================
+# ArgoCD Configuration
+# =============================================================================
+argocd:
+  repo_url: "https://github.com/your-username/your-repo.git"
+  path: "."                      # Path in repo to watch
+  branch: "main"                 # Branch to track
+  app_name: "app-of-apps"        # Name of the root application
+
+# =============================================================================
+# TLS / Gateway API Settings (optional)
+# Enables Cilium Gateway API + cert-manager + Let's Encrypt wildcard cert
+# Requires a Cloudflare-managed domain and API token with Zone:DNS:Edit permission
+# =============================================================================
+tls:
+  tls_enabled: false
+  domain: "yourdomain.com"              # Your domain (cert issued for *.domain)
+  acme_email: "you@yourdomain.com"      # Let's Encrypt registration email
+  cloudflare_api_token: ""              # Cloudflare API token (Zone:DNS:Edit)
+
+# =============================================================================
+# Backup/Archive Settings
+# =============================================================================
+backup:
+  enabled: false
+  # If share is already mounted locally, use this path directly
+  local_mount: "/path/to/mount"
+  # Path within the mount for deployment artifacts
+  backup_path: "k8s_deployments"
+  # NFS settings (used only if local_mount doesn't exist)
+  nfs_server: "192.168.x.x"
+  nfs_share: "/mnt/share"
