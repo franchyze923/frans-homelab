@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/franchyze923/app-of-apps.git
+    repoURL: https://github.com/franchyze923/frans-homelab.git
     targetRevision: main
-    path: workloads/ceph-dashboard
+    path: gitops/workloads/ceph-dashboard
   destination:
     server: https://kubernetes.default.svc
     namespace: rook-ceph

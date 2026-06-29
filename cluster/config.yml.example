@@ -56,14 +56,16 @@ storage:
 apps:
   dashboard: true                # Kubernetes Dashboard
   demo_apps: true                # Demo nginx applications
-  argocd: true                   # Argo CD GitOps (deploys apps from app-of-apps repo, including Keycloak)
+  argocd: true                   # Argo CD GitOps (deploys apps from the gitops/ tree, including Keycloak)
 
 # =============================================================================
 # ArgoCD Configuration
 # =============================================================================
+# In the frans-homelab monorepo the GitOps tree lives under gitops/, so the
+# root Application watches gitops/apps (recurse) in this same repo.
 argocd:
-  repo_url: "https://github.com/your-username/your-repo.git"
-  path: "."                      # Path in repo to watch
+  repo_url: "https://github.com/franchyze923/frans-homelab.git"
+  path: "gitops/apps"            # Path in repo to watch (root app-of-apps dir)
   branch: "main"                 # Branch to track
   app_name: "app-of-apps"        # Name of the root application
 

@@ -74,9 +74,9 @@
           spec:
             project: default
             source:
-              repoURL: {{ argocd_repo_url | default('https://github.com/franchyze923/app-of-apps-demo.git') }}
+              repoURL: {{ argocd_repo_url | default('https://github.com/franchyze923/frans-homelab.git') }}
               targetRevision: {{ argocd_branch | default('main') }}
-              path: {{ argocd_path | default('.') }}
+              path: {{ argocd_path | default('gitops/apps') }}
             destination:
               server: https://kubernetes.default.svc
               namespace: argocd
@@ -105,8 +105,8 @@
           - "Password: {{ argocd_password.stdout }}"
           - ""
           - "App of Apps configured:"
-          - "  Repo: {{ argocd_repo_url | default('https://github.com/franchyze923/app-of-apps-demo.git') }}"
-          - "  Path: {{ argocd_path | default('.') }}"
+          - "  Repo: {{ argocd_repo_url | default('https://github.com/franchyze923/frans-homelab.git') }}"
+          - "  Path: {{ argocd_path | default('gitops/apps') }}"
           - "  Branch: {{ argocd_branch | default('main') }}"
           - ""
           - "Credentials saved to: argocd-credentials.txt"

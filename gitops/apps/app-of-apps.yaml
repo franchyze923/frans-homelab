@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/franchyze923/app-of-apps.git
+    repoURL: https://github.com/franchyze923/frans-homelab.git
     targetRevision: main
-    path: apps
+    path: gitops/apps
     directory:
       recurse: true
   destination:
