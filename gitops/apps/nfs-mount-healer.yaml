@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/franchyze923/app-of-apps.git
+    repoURL: https://github.com/franchyze923/frans-homelab.git
     targetRevision: main
-    path: workloads/nfs-mount-healer
+    path: gitops/workloads/nfs-mount-healer
   destination:
     server: https://kubernetes.default.svc
     namespace: nfs-mount-healer
