@@ -1,0 +1,309 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jellyfin
+---
+# Config on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-config-backup-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/jellyfin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config-backup
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: jellyfin-config-backup-pv
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-media-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-media
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: jellyfin-media-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+# Home media (matches Plex's plex-homemedia)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-homemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-homemedia
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: jellyfin-homemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+# Family media (matches Plex's plex-familymedia)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-familymedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-familymedia
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: jellyfin-familymedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+  labels:
+    app: jellyfin
+spec:
+  replicas: 1
+  # Recreate: config PVC is ReadWriteOnce, so RollingUpdate deadlocks with a
+  # Multi-Attach error (old pod holds the volume) when the pod is replaced.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+    spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; chown -R 1000:1000 /config; elif [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /config-backup/. /config/; chown -R 1000:1000 /config; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
+      containers:
+        - name: jellyfin
+          image: lscr.io/linuxserver/jellyfin:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 8096
+              name: http
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: homemedia
+              mountPath: /homemedia
+              readOnly: true
+            - name: familymedia
+              mountPath: /familymedia
+              readOnly: true
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: jellyfin-config
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: jellyfin-config-backup
+        - name: media
+          persistentVolumeClaim:
+            claimName: jellyfin-media
+        - name: homemedia
+          persistentVolumeClaim:
+            claimName: jellyfin-homemedia
+        - name: familymedia
+          persistentVolumeClaim:
+            claimName: jellyfin-familymedia
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+  labels:
+    app: jellyfin
+spec:
+  type: ClusterIP
+  selector:
+    app: jellyfin
+  ports:
+    - port: 8096
+      targetPort: 8096
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - jellyfin.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: jellyfin
+          port: 8096
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jellyfin-config-backup
+  namespace: jellyfin
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: jellyfin
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting jellyfin config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: jellyfin-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: jellyfin-config-backup

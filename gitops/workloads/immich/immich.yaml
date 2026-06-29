@@ -1,0 +1,536 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: immich
+---
+# ---------------------------------------------------------------------------
+# Storage
+#   - Ceph RBD: postgres data, ML model cache, and the immich /data root
+#     (thumbnails, encoded-video, profile, upload staging) -- fast, small.
+#   - NFS (dynamic): the original photos/videos at /data/library -- the bulk.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-postgres
+  namespace: immich
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-model-cache
+  namespace: immich
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Derivatives + config on Ceph (thumbs, encoded-video, profile, upload, backups).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-data
+  namespace: immich
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 300Gi
+---
+# Original photos/videos on Unraid NFS at /mnt/user/FranData/immich (static PV,
+# Retain -- photos survive a PVC delete). Matches the other media shares.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-library-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/immich
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-library
+  namespace: immich
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: immich-library-pv
+  resources:
+    requests:
+      storage: 1Ti
+---
+# External library (read-only): existing photos on Unraid, indexed in place.
+# Mounted at /mnt/external/FranHomeMedia; add libraries in Immich pointing at
+# subpaths (e.g. /mnt/external/FranHomeMedia/Frans_Photos/2013).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-ext-franhomemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-ext-franhomemedia
+  namespace: immich
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: immich-ext-franhomemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+# External library (read-only): family photos on Unraid, indexed in place.
+# Mounted at /mnt/external/FamilyHomeMedia; add a library in Immich pointing at
+# /mnt/external/FamilyHomeMedia/Family Photos.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-ext-familyhomemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-ext-familyhomemedia
+  namespace: immich
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: ""
+  volumeName: immich-ext-familyhomemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+# Transcoded videos on NFS (moved off Ceph -- they were 58GB x3-replicated and
+# filled the Proxmox datastore). Mounted at /data/encoded-video.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-encoded-video-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/immich-encoded-video
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-encoded-video
+  namespace: immich
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: immich-encoded-video-pv
+  resources:
+    requests:
+      storage: 1Ti
+---
+# ---------------------------------------------------------------------------
+# PostgreSQL (Immich's VectorChord/pgvecto-rs image -- required, not stock pg)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-postgres
+  namespace: immich
+  labels:
+    app: immich-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich-postgres
+  template:
+    metadata:
+      labels:
+        app: immich-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+          env:
+            - name: POSTGRES_DB
+              value: immich
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+            # Subdir so initdb ignores the PVC's lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U postgres -d immich"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: immich-postgres
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-postgres
+  namespace: immich
+spec:
+  selector:
+    app: immich-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+# ---------------------------------------------------------------------------
+# Redis (valkey) -- ephemeral queues/cache
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-redis
+  namespace: immich
+  labels:
+    app: immich-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: immich-redis
+  template:
+    metadata:
+      labels:
+        app: immich-redis
+    spec:
+      containers:
+        - name: redis
+          image: docker.io/valkey/valkey:9
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-redis
+  namespace: immich
+spec:
+  selector:
+    app: immich-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+# ---------------------------------------------------------------------------
+# Machine learning (CUDA image, runs on the time-sliced Tesla P4)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-machine-learning
+  namespace: immich
+  labels:
+    app: immich-machine-learning
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich-machine-learning
+  template:
+    metadata:
+      labels:
+        app: immich-machine-learning
+    spec:
+      nodeSelector:
+        gpu: "true"
+      containers:
+        - name: immich-machine-learning
+          image: ghcr.io/immich-app/immich-machine-learning:v2.7.5-cuda
+          env:
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          ports:
+            - containerPort: 3003
+          volumeMounts:
+            - name: model-cache
+              mountPath: /cache
+          readinessProbe:
+            tcpSocket:
+              port: 3003
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1"
+            limits:
+              memory: "6Gi"
+              cpu: "6"
+              nvidia.com/gpu: 1
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: immich-model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-machine-learning
+  namespace: immich
+spec:
+  selector:
+    app: immich-machine-learning
+  ports:
+    - port: 3003
+      targetPort: 3003
+---
+# ---------------------------------------------------------------------------
+# Immich server (API + web). Mounts Ceph at /data, NFS originals at /data/library.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-server
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich-server
+  template:
+    metadata:
+      labels:
+        app: immich-server
+    spec:
+      # PREFER the new Ryzen node (ubuntu-26-desktop-node) -- fastest cores in the
+      # cluster (Zen2) on its own dedicated host -- but don't hard-pin: if it's
+      # NotReady/unschedulable, fall over to any other node instead of hanging.
+      # (Immich's image is multi-arch, so it runs fine on any node.)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: [ubuntu-26-desktop-node]
+      tolerations:
+        # tolerate the M1's arm64 taint (so it CAN land there)
+        - key: arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
+        # if a node goes unreachable/not-ready, evict + reschedule after 60s
+        # (default is 300s) so failover off the M1 is quicker
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 60
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 60
+      containers:
+        - name: immich-server
+          image: ghcr.io/immich-app/immich-server:v2.7.5
+          env:
+            - name: DB_HOSTNAME
+              value: immich-postgres
+            - name: DB_USERNAME
+              value: postgres
+            - name: DB_DATABASE_NAME
+              value: immich
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich-secrets
+                  key: DB_PASSWORD
+            - name: REDIS_HOSTNAME
+              value: immich-redis
+            - name: TZ
+              value: America/New_York
+          ports:
+            - containerPort: 2283
+              name: http
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # Originals on NFS, nested under the Ceph /data mount.
+            - name: library
+              mountPath: /data/library
+            # Transcoded videos on NFS (kept off Ceph).
+            - name: encoded-video
+              mountPath: /data/encoded-video
+            # Read-only external library (existing photos, indexed in place).
+            - name: ext-franhomemedia
+              mountPath: /mnt/external/FranHomeMedia
+              readOnly: true
+            - name: ext-familyhomemedia
+              mountPath: /mnt/external/FamilyHomeMedia
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/server/ping
+              port: 2283
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            # On the idle worker: reserve real cores and allow bursting to most
+            # of the 8-core node so jobs run hard without starving the API.
+            requests:
+              memory: "1Gi"
+              cpu: "1"
+            limits:
+              memory: "4Gi"
+              cpu: "5"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: immich-data
+        - name: library
+          persistentVolumeClaim:
+            claimName: immich-library
+        - name: encoded-video
+          persistentVolumeClaim:
+            claimName: immich-encoded-video
+        - name: ext-franhomemedia
+          persistentVolumeClaim:
+            claimName: immich-ext-franhomemedia
+        - name: ext-familyhomemedia
+          persistentVolumeClaim:
+            claimName: immich-ext-familyhomemedia
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-server
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  # Gateway-only: reached via the HTTPRoute (immich.franpolignano.com -> .202).
+  # No LoadBalancer, so no .201 external IP / port-2283 ambiguity.
+  type: ClusterIP
+  selector:
+    app: immich-server
+  ports:
+    - port: 2283
+      targetPort: 2283
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: immich
+  namespace: immich
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - immich.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: immich-server
+          port: 2283

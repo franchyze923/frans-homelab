@@ -1,0 +1,318 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elk
+---
+# Elasticsearch data on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-pvc
+  namespace: elk
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for data backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: elasticsearch-data-backup-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/elasticsearch
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-data-backup
+  namespace: elk
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: elasticsearch-data-backup-pv
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Elasticsearch
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /data-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /data-backup/backup.tar.gz -C /data; chown -R 1000:1000 /data; elif [ -n "$(ls -A /data-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /data-backup/. /data/; chown -R 1000:1000 /data; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "false"
+            - name: ES_JAVA_OPTS
+              value: "-Xms1g -Xmx1g"
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+          resources:
+            requests:
+              memory: "1536Mi"
+              cpu: "500m"
+            limits:
+              # Was 2Gi/512m heap and pinned at 95% -- off-heap + Lucene cache
+              # were starved. 3Gi limit + 1g heap leaves room for the FS cache.
+              memory: "3Gi"
+              cpu: "1000m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: elasticsearch-pvc
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: elasticsearch-data-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: elk
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+    - name: transport
+      port: 9300
+      targetPort: 9300
+---
+# Logstash
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: elk
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+      tcp {
+        port => 5000
+        codec => json
+      }
+    }
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "logstash-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:8.11.0
+          ports:
+            - containerPort: 5044
+              name: beats
+            - containerPort: 5000
+              name: tcp
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/logstash/pipeline/logstash.conf
+              subPath: logstash.conf
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms256m -Xmx256m"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: logstash-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: elk
+spec:
+  selector:
+    app: logstash
+  ports:
+    - name: beats
+      port: 5044
+      targetPort: 5044
+    - name: tcp
+      port: 5000
+      targetPort: 5000
+---
+# Kibana
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.11.0
+          ports:
+            - containerPort: 5601
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: http://elasticsearch:9200
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: elk
+spec:
+  type: ClusterIP
+  selector:
+    app: kibana
+  ports:
+    - port: 5601
+      targetPort: 5601
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kibana
+  namespace: elk
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - kibana.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: kibana
+          port: 5601
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: elasticsearch-data-backup
+  namespace: elk
+spec:
+  schedule: "35 1 * * *"
+  suspend: true   # disabled -- elasticsearch backup not needed
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: elasticsearch
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting elasticsearch data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: elasticsearch-pvc
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: elasticsearch-data-backup

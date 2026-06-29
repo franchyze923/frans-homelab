@@ -1,0 +1,412 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plex
+---
+# Config uses Ceph RBD for fast SQLite performance (NFS causes database locking issues)
+# Backed up to NFS periodically via CronJob, restored on fresh deploys via init container
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config
+  namespace: plex
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 40Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-config-backup-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/plex
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config-backup
+  namespace: plex
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: plex-config-backup-pv
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-media-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-media
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-media-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-homemedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-homemedia
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-homemedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-familymedia-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FamilyHomeMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-familymedia
+  namespace: plex
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: plex-familymedia-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  namespace: plex
+  labels:
+    app: plex
+spec:
+  replicas: 1
+  # Recreate (not RollingUpdate): the config PVC is ReadWriteOnce on Ceph RBD,
+  # so the old pod must release it before the new pod can attach -- otherwise
+  # node moves deadlock with a Multi-Attach error.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      # Pin to the GPU node (Tesla P4) for NVENC/NVDEC hardware transcoding.
+      nodeSelector:
+        gpu: "true"
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ ! -d /config/Library ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring Plex from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; chown -R 1000:1000 /config; elif [ -d /config-backup/Library ]; then echo "Restoring Plex from legacy backup..."; cp -a /config-backup/. /config/; chown -R 1000:1000 /config; fi; else echo "Config exists, skipping restore."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
+        - name: wait-for-media
+          image: busybox:latest
+          command: ['sh', '-c', 'until ls /media > /dev/null 2>&1; do echo "Waiting for media NFS mount..."; sleep 2; done; echo "Media mount ready."']
+          volumeMounts:
+            - name: media
+              mountPath: /media
+              readOnly: true
+      containers:
+        - name: plex
+          image: lscr.io/linuxserver/plex:latest
+          imagePullPolicy: Always
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+            - name: VERSION
+              value: "docker"
+            - name: ADVERTISE_IP
+              value: "http://192.168.40.200:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
+            - name: ALLOWED_NETWORKS
+              value: "192.168.40.0/24,10.42.0.0/16"
+            # Required for GPU transcoding: the default capability set
+            # (compute,utility) lacks "video", so NVENC/NVDEC are unavailable
+            # without this. "all" pulls in video + compute + utility.
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "all"
+          ports:
+            - containerPort: 32400
+              name: http
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "4000m"
+            limits:
+              memory: "16Gi"
+              cpu: "6000m"
+              # One time-sliced slice of the P4 (shares VRAM with ollama/frigate).
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: homemedia
+              mountPath: /homemedia
+              readOnly: true
+            - name: familymedia
+              mountPath: /familymedia
+              readOnly: true
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: plex-config
+        - name: media
+          persistentVolumeClaim:
+            claimName: plex-media
+        - name: homemedia
+          persistentVolumeClaim:
+            claimName: plex-homemedia
+        - name: familymedia
+          persistentVolumeClaim:
+            claimName: plex-familymedia
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: plex-config-backup
+---
+# CronJob: backup Plex config from Ceph to NFS every 6 hours
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plex-config-backup
+  namespace: plex
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: plex
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting Plex config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: plex-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: plex-config-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex
+  namespace: plex
+  labels:
+    app: plex
+spec:
+  type: ClusterIP
+  selector:
+    app: plex
+  ports:
+    - port: 32400
+      targetPort: 32400
+      protocol: TCP
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex-lb
+  namespace: plex
+  labels:
+    app: plex
+  annotations:
+    lbipam.cilium.io/ips: "192.168.40.200"
+spec:
+  type: LoadBalancer
+  selector:
+    app: plex
+  ports:
+    - port: 32400
+      targetPort: 32400
+      protocol: TCP
+      name: plex
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plex
+  namespace: plex
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - plex.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: plex
+          port: 32400
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plex-updater
+  namespace: plex
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plex-updater
+  namespace: plex
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plex-updater
+  namespace: plex
+subjects:
+  - kind: ServiceAccount
+    name: plex-updater
+    namespace: plex
+roleRef:
+  kind: Role
+  name: plex-updater
+  apiGroup: rbac.authorization.k8s.io
+---
+# Weekly CronJob to pull the latest Plex image by restarting the deployment
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plex-auto-update
+  namespace: plex
+spec:
+  schedule: "0 4 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: plex-updater
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl:latest
+              command:
+                - kubectl
+                - rollout
+                - restart
+                - deployment/plex
+                - -n
+                - plex

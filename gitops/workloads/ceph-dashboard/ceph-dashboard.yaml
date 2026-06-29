@@ -1,0 +1,22 @@
+# Exposes the Rook-Ceph mgr dashboard at https://ceph.franpolignano.com via the
+# shared Cilium gateway. The dashboard itself is part of the (manually managed)
+# rook-ceph install -- only this HTTPRoute lives in Git.
+#
+# Out-of-band prerequisite (NOT in Git, set with kubectl -- see README):
+#   dashboard SSL is disabled so the gateway terminates TLS and proxies plain
+#   HTTP to the mgr-dashboard service on port 7000.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ceph-dashboard
+  namespace: rook-ceph
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - ceph.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: rook-ceph-mgr-dashboard
+          port: 7000

@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: open-webui
+---
+# ----------------------------------------------------------------------
+# Ollama: the backend that actually runs the LLMs.
+# OpenWebUI (below) is just a frontend that talks to this over HTTP.
+# ----------------------------------------------------------------------
+# PVC for downloaded models. Models are large (GBs each) and we don't
+# want to re-download them every time the pod restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: open-webui
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: open-webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      # Pin to the GPU node (Tesla P4) so inference runs on the GPU.
+      nodeSelector:
+        gpu: "true"
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            # Ollama stores pulled models under /root/.ollama.
+            - name: models
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "8Gi"
+              # Modest CPU now that the GPU does the heavy lifting.
+              cpu: "4"
+              # Request the GPU. The model runs in the P4's 8GB VRAM
+              # (a 7B Q4 model ~5GB fits; mind Frigate also uses ~330MiB).
+              nvidia.com/gpu: 1
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+---
+# Internal service so OpenWebUI can reach Ollama at http://ollama:11434.
+# ClusterIP (no external IP) -- only the frontend needs to talk to it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: open-webui
+spec:
+  type: ClusterIP
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434
+---
+# ----------------------------------------------------------------------
+# OpenWebUI: the chat web frontend.
+# ----------------------------------------------------------------------
+# PVC for its database (users, chats, settings).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: open-webui-data
+  namespace: open-webui
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: open-webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      containers:
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main
+          ports:
+            - containerPort: 8080
+          env:
+            # Point the frontend at the in-cluster Ollama service.
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama:11434"
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/data
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "100m"
+            limits:
+              # OpenWebUI loads a sentence-transformer embedding model on
+              # boot; 1Gi gets OOMKilled mid-startup, so give it headroom.
+              memory: "4Gi"
+              cpu: "1"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: open-webui-data
+---
+# Service: exposes the web UI on its own LoadBalancer IP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: open-webui
+  namespace: open-webui
+spec:
+  type: LoadBalancer
+  selector:
+    app: open-webui
+  ports:
+    - port: 80
+      targetPort: 8080
