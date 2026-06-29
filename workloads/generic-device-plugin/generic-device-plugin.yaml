@@ -2,11 +2,12 @@
 # Radeon RX 570's DRM render node (/dev/dri/renderD128) to pods so they can do
 # VA-API hardware transcoding (H.264/HEVC encode+decode). The RX 570 is
 # PCI-passed-through to VM 100 (`ubuntu-26-desktop-node`); this advertises it as
-# `squat.ai/dri`, count 4 (shareable by up to 4 pods, like the P4's time-slicing
+# `devic.es/dri`, count 4 (shareable by up to 4 pods, like the P4's time-slicing
 # — there's no hard isolation, so keep concurrent transcodes sane).
 #
 # Pinned (nodeSelector gpu-amd=true) to the only node with the card. Consumers
-# request `squat.ai/dri: "1"` and the plugin injects /dev/dri/renderD128.
+# request `devic.es/dri: "1"` (the plugin's default domain) and it injects
+# /dev/dri/renderD128 into the container.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
