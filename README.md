@@ -28,28 +28,38 @@ frans-homelab/
 
 ## Hardware
 
-### Proxmox hosts
+### Physical hosts
 
-| Host | CPU | RAM | Notes |
+The four bare-metal machines. Kubernetes nodes are **VMs on top of these** — see the next table. (Inventoried live over SSH, 2026-06-29.)
+
+| Host | IP | Role | Chassis (BIOS) | CPU | RAM | OS | Storage |
+|---|---|---|---|---|---|---|---|
+| `pve` | `.10` | Primary Proxmox host — control-plane + Rocky workers + M1 VM | Dell PowerEdge R720 (2.9.0, 2019) | 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz | 192 GB DDR3-1866 (12× 16 GB; 188 GiB usable; 24 slots, max 1.5 TB) | Proxmox VE 9.2.3 / Debian 13 (k 7.0.6) | 1 TB Samsung 980 PRO NVMe + 500 GB 870 EVO SATA SSD |
+| `fran` | `.9` | Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop | Gigabyte B450M DS3H (F50, 2019) | Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2) | 40 GB DDR4-2133 (16+8+16 GB; 39 GiB usable; 4 slots, max 128 GB) | Proxmox VE 9.1.7 / Debian 13 (k 6.17.13) | 250 GB 850 EVO SSD + 4 TB Toshiba HDD (LVM-thin) + DVD-RW |
+| `UnraidBackup` | `.116` | NAS — bulk media + nightly config backups (NFS to cluster) | Intel S2600GZ server board (2014) | Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT) | 64 GB DDR3-1600 (8× 8 GB; 63 GiB usable; 16 slots, max 256 GB) | Unraid 7.3.1 (k 6.18.33) | 2× 10.9 TB HDD array + 476 GB SSD cache (Intel RMS25CB080 HBA) + 16 GB boot USB |
+| `truenas` | `.240` | NAS — TrueNAS SCALE (ZFS) | Dell PowerEdge R720 (2.9.0, 2019) | 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz | ~110 GiB DDR3 usable (likely 128 GB; DIMMs not enumerated — no root) | TrueNAS SCALE 25.10.3.1 / Debian 12 (k 6.12.33) | 5× 5 TB Seagate ST5000LM000 HDD + 2× 238 GB SATA SSD + DVD-RW |
+
+**Notes:**
+- Two of the four are Dell R720s — `pve` (primary compute) and `truenas` (ZFS NAS).
+- `fran` (B450M) has the fastest per-core CPU → preferred home for CPU-bound workloads. ⚠️ Its board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
+
+### Kubernetes nodes (VMs)
+
+VMs running **on the physical hosts above** — kubeadm, mixed-arch (5× amd64 + 1× arm64):
+
+| Node | Arch | Runs on | Role |
 |---|---|---|---|
-| **Dell R720** | 2× Xeon E5-2660 v2 (20c / 40t, 2013) | — | Primary host. Runs control-plane + 2 Rocky workers + the M1 arm64 VM off a single NVMe (`speedy-nvme-drive`). |
-| **Gigabyte B450M** @ `192.168.40.9` | Ryzen 5 3600 (6c / 12t, Zen2) | 39 GiB | Standalone (not in a PVE cluster), Proxmox VE 9.1, added 2026-06. Fastest per-core CPU → preferred home for CPU-bound work. SATA DVD passed through for ripping; 3.6 TB external LVM-thin pool. ⚠️ Needs **SVM Mode** enabled in BIOS or no VM starts. |
-
-### Cluster nodes — kubeadm, mixed-arch (5× amd64 + 1× arm64)
-
-| Node | Arch | Host / hardware | Role |
-|---|---|---|---|
-| control-plane | amd64 | R720 VM | Control plane |
-| worker ×2 (Rocky Linux) | amd64 | R720 VMs | Workers + Ceph OSDs |
-| `ubuntu24-gpu-box` | amd64 | Ubuntu, **Tesla P4** GPU | GPU workloads (Plex, ollama, Frigate, Immich-ML) |
-| `ubuntu-26-desktop-node` | amd64 | VM 100 on B450M (`192.168.40.75`, 8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + doubles as an XFCE desktop |
-| `mac-m1-worker` | **arm64** | M1 Mac VM on R720 | arm64 worker (tainted `arch=arm64:NoSchedule`) |
+| control-plane | amd64 | `pve` (R720) | Control plane |
+| worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers + Ceph OSDs |
+| `ubuntu24-gpu-box` | amd64 | **Tesla P4** (GPU passthrough) | GPU workloads (Plex, ollama, Frigate, Immich-ML) |
+| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.75`, 8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + doubles as an XFCE desktop |
+| `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
 
 **GPU — Tesla P4:** 8 GB GDDR5, 2,560 CUDA cores (Pascal), 75 W single-slot, NVENC/NVDEC. **Time-sliced** (4 replicas) so Plex + ollama + Frigate + Immich-ML share it; consumers pinned with `nodeSelector: gpu=true`.
 
-### NAS — Unraid 7.3.1 @ `192.168.40.116`
+### Storage
 
-NFS-exported to the cluster for bulk media + nightly config backups (anything too big or recreatable for Ceph).
+**Unraid NFS** (`192.168.40.116`) — bulk media + nightly config backups (anything too big or recreatable for Ceph):
 
 | Storage | FS | Size | Role |
 |---|---|---|---|
@@ -59,9 +69,7 @@ NFS-exported to the cluster for bulk media + nightly config backups (anything to
 
 > ⚠️ `/mnt/user` is shfs (FUSE) and hands out unstable NFS handles → pods hit `ESTALE`. Mitigated by setting `FranData` array-only (`shareUseCache=no`) + the `nfs-mount-healer` app. See [`gitops/README.md`](gitops/README.md) for detail.
 
-### Storage — Rook-Ceph
-
-Block storage (`rook-ceph-block` / RBD): 3 OSDs (one per R720 node, on NVMe), `size=2`, ~210 GiB usable. **Managed out-of-band** (not in Git) — runbook in [`gitops/README.md`](gitops/README.md).
+**Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs (one per Rocky node, on the `pve` NVMe), `size=2`, ~210 GiB usable. **Managed out-of-band** (not in Git) — runbook in [`gitops/README.md`](gitops/README.md).
 
 ---
 

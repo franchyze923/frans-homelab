@@ -6,6 +6,17 @@ forward, every change gets an entry here.
 
 ## 2026-06-29
 
+### Hardware inventory: audited all 4 physical hosts, uniform README table
+SSH'd into every bare-metal box and refreshed the README **Physical hosts**
+table with verified CPU / RAM / OS / storage (physical hardware only, VMs split
+into their own table):
+- `pve` (`.10`) — Dell R720, 2× Xeon E5-2660 v2 (20c/40t), 192 GB DDR3, Proxmox VE 9.2.3.
+- `fran` (`.9`) — Gigabyte B450M, Ryzen 5 3600 (6c/12t), 40 GB DDR4, Proxmox VE 9.1.7.
+- `UnraidBackup` (`.116`) — Intel S2600GZ, Xeon E5-2603 (4c/4t), 64 GB DDR3, Unraid 7.3.1.
+- `truenas` (`.240`) — **second Dell R720**, 2× Xeon E5-2640 (12c/24t), ~110 GiB DDR3,
+  TrueNAS SCALE 25.10.3.1, 5× 5 TB Seagate + 2× SSD (ZFS). (Inventoried as the
+  unprivileged `fran` user via `/sys` DMI — no root, so DIMM layout not enumerated.)
+
 ### Consolidated into a single repo (`frans-homelab`)
 Merged the two repos that ran the homelab into one monorepo, **preserving full
 git history** from both:
