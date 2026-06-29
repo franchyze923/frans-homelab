@@ -4,7 +4,7 @@ GitOps configuration for my homelab Kubernetes cluster. Everything that runs on
 the cluster is declared here; **Argo CD** continuously syncs this repo to the
 cluster, so `git push` is the deploy mechanism.
 
-See [CHANGELOG.md](CHANGELOG.md) for a running history of changes.
+See [CHANGELOG.md](../CHANGELOG.md) (repo root) for a running history of changes.
 
 ## How it works
 

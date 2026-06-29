@@ -1,8 +1,26 @@
 # Changelog
 
-All notable changes to the homelab GitOps config are recorded here. Newest first.
+All notable changes to the homelab are recorded here — both **cluster**
+(provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
+forward, every change gets an entry here.
 
 ## 2026-06-29
+
+### Consolidated into a single repo (`frans-homelab`)
+Merged the two repos that ran the homelab into one monorepo, **preserving full
+git history** from both:
+- `k8s-fun` → [`cluster/`](cluster/) — Terraform + Ansible cluster provisioning.
+- `app-of-apps` → [`gitops/`](gitops/) — Argo CD app-of-apps.
+
+Rewired GitOps for the new layout: all 29 in-repo Argo CD `Application`s now
+point at `frans-homelab.git` with `gitops/`-prefixed paths (root app watches
+`gitops/apps`); the external `nfs-provisioner` chart was left untouched. The
+cluster bootstrap (`config.yml.example`, `ansible/argocd.yml`) now defaults to
+this repo + `gitops/apps`. **Cut Argo CD over live** — all 30 Applications
+re-reconciled to the new repo `Synced`/`Healthy` with no manifest changes. The
+old `k8s-fun` and `app-of-apps` repos are now **archived** (read-only). Added a
+top-level `README.md` (hardware, network, deploy + GitOps guides) and promoted
+this changelog to the repo root.
 
 ### New node: second Proxmox host + Ryzen worker (`ubuntu-26-desktop-node`)
 Added a **second, standalone Proxmox VE 9.1 host** (Gigabyte B450M / **AMD Ryzen 5
