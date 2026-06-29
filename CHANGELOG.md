@@ -2,6 +2,41 @@
 
 All notable changes to the homelab GitOps config are recorded here. Newest first.
 
+## 2026-06-29
+
+### New node: second Proxmox host + Ryzen worker (`ubuntu-26-desktop-node`)
+Added a **second, standalone Proxmox VE 9.1 host** (Gigabyte B450M / **AMD Ryzen 5
+3600**, 6c/12t Zen2, 39 GiB) at `192.168.40.9` — the first time the cluster spans
+more than the single R720. Stood up **VM 100 `ubuntu-26-desktop-node`** on it
+(8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04 cloud image, IP `192.168.40.75`) which
+doubles as an **XFCE desktop** and a **kubeadm worker** (v1.35.6, containerd
+2.2.2, Cilium). It has the **fastest per-core CPU** in the cluster (Zen2 vs. the
+2013 Xeons), so it's now the preferred home for CPU-bound workloads.
+
+- **Unattended provision:** Ubuntu installed from the **cloud image via Proxmox
+  cloud-init** (SSH keys + DHCP, no installer TUI), then worker prep mirrors the
+  existing 26.04 node (`mac-m1-worker`): swap/zram off, `rbd`/`br_netfilter`/
+  `overlay` modules, `nfs-common`, native containerd with `SystemdCgroup=true`,
+  `kube*` pinned to **1.35.6** from `pkgs.k8s.io` v1.35.
+- ⚠️ **BIOS gotcha:** the board ships with **SVM (AMD-V) disabled** even though the
+  `svm` CPU flag shows (`SVM disabled by BIOS in MSR_VM_CR`) — had to enable
+  *SVM Mode* in BIOS or `kvm_amd` won't load and no VM starts.
+- **DVD passthrough:** the host's SATA optical drive is passed into the VM
+  (`scsi2`, read-only) for ripping/reading discs (first use: copied a 129-photo
+  data CD to `FranData/CD-Archives/`).
+- **AMD Radeon RX 570 4 GB** discrete GPU is present but **host-owned** (`amdgpu`
+  bound, not passed through). Candidate for VA-API transcoding (Plex/Jellyfin/
+  Frigate) later; not an ML target (ROCm dropped Polaris).
+- **Not in Git** (like the rest of the cluster's kubeadm membership / Proxmox /
+  Rook config) — documented in the README **Cluster** section instead.
+
+### Immich: prefer the new Ryzen node (test placement)
+Repointed `immich-server`'s soft node-affinity from `mac-m1-worker` to
+`ubuntu-26-desktop-node` (fastest cores, on its own host) to test import
+performance — still **preferred** (not hard-pinned), and **ML stays GPU-pinned**
+on the Tesla P4. The RWO Ceph volume re-attached cleanly on the new node (Ceph
+CSI plugin already runs there); `Recreate` strategy avoided a Multi-Attach.
+
 ## 2026-06-27
 
 ### Immich availability: stop the M1 node from taking it down overnight
