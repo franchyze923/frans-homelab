@@ -30,18 +30,40 @@ frans-homelab/
 
 ### Physical hosts
 
-The four bare-metal machines. Kubernetes nodes are **VMs on top of these** — see the next table. (Inventoried live over SSH, 2026-06-29.)
+The four bare-metal machines (Kubernetes nodes are **VMs on top of these** — see the next table). Inventoried live over SSH, 2026-06-29.
 
-| Host | IP | Role | Chassis (BIOS) | CPU | RAM | OS | Storage |
-|---|---|---|---|---|---|---|---|
-| `pve` | `.10` | Primary Proxmox host — control-plane + Rocky workers + M1 VM | Dell PowerEdge R720 (2.9.0, 2019) | 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz | 192 GB DDR3-1866 (12× 16 GB; 188 GiB usable; 24 slots, max 1.5 TB) | Proxmox VE 9.2.3 / Debian 13 (k 7.0.6) | 1 TB Samsung 980 PRO NVMe + 500 GB 870 EVO SATA SSD |
-| `fran` | `.9` | Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop | Gigabyte B450M DS3H (F50, 2019) | Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2) | 40 GB DDR4-2133 (16+8+16 GB; 39 GiB usable; 4 slots, max 128 GB) | Proxmox VE 9.1.7 / Debian 13 (k 6.17.13) | 250 GB 850 EVO SSD + 4 TB Toshiba HDD (LVM-thin) + DVD-RW |
-| `UnraidBackup` | `.116` | NAS — bulk media + nightly config backups (NFS to cluster) | Intel S2600GZ server board (2014) | Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT) | 64 GB DDR3-1600 (8× 8 GB; 63 GiB usable; 16 slots, max 256 GB) | Unraid 7.3.1 (k 6.18.33) | 2× 10.9 TB HDD array + 476 GB SSD cache (Intel RMS25CB080 HBA) + 16 GB boot USB |
-| `truenas` | `.240` | NAS — TrueNAS SCALE (ZFS) | Dell PowerEdge R720 (2.9.0, 2019) | 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz | ~110 GiB DDR3 usable (likely 128 GB; DIMMs not enumerated — no root) | TrueNAS SCALE 25.10.3.1 / Debian 12 (k 6.12.33) | 5× 5 TB Seagate ST5000LM000 HDD + 2× 238 GB SATA SSD + DVD-RW |
+#### `pve` — Dell PowerEdge R720 · `192.168.40.10`
+Primary Proxmox host — runs the control-plane, Rocky workers, and M1 VM.
 
-**Notes:**
-- Two of the four are Dell R720s — `pve` (primary compute) and `truenas` (ZFS NAS).
-- `fran` (B450M) has the fastest per-core CPU → preferred home for CPU-bound workloads. ⚠️ Its board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
+- **CPU:** 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz
+- **RAM:** 192 GB DDR3-1866 — 12× 16 GB, 188 GiB usable (24 slots, max 1.5 TB)
+- **OS:** Proxmox VE 9.2.3 / Debian 13 (kernel 7.0.6)
+- **Storage:** 1 TB Samsung 980 PRO NVMe + 500 GB 870 EVO SATA SSD
+
+#### `fran` — Gigabyte B450M DS3H · `192.168.40.9`
+Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest per-core CPU → preferred home for CPU-bound workloads.
+
+- **CPU:** Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2)
+- **RAM:** 40 GB DDR4-2133 — 16+8+16 GB, 39 GiB usable (4 slots, max 128 GB)
+- **OS:** Proxmox VE 9.1.7 / Debian 13 (kernel 6.17.13)
+- **Storage:** 250 GB 850 EVO SSD + 4 TB Toshiba HDD (LVM-thin) + DVD-RW
+- ⚠️ Board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
+
+#### `UnraidBackup` — Intel S2600GZ · `192.168.40.116`
+NAS — bulk media + nightly config backups, NFS-exported to the cluster.
+
+- **CPU:** Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT)
+- **RAM:** 64 GB DDR3-1600 — 8× 8 GB, 63 GiB usable (16 slots, max 256 GB)
+- **OS:** Unraid 7.3.1 (kernel 6.18.33)
+- **Storage:** 2× 10.9 TB HDD array + 476 GB SSD cache (Intel RMS25CB080 HBA) + 16 GB boot USB
+
+#### `truenas` — Dell PowerEdge R720 · `192.168.40.240`
+NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
+
+- **CPU:** 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz
+- **RAM:** ~110 GiB DDR3 usable (likely 128 GB; DIMM layout not enumerated — no root)
+- **OS:** TrueNAS SCALE 25.10.3.1 / Debian 12 (kernel 6.12.33)
+- **Storage:** 5× 5 TB Seagate ST5000LM000 HDD + 2× 238 GB SATA SSD + DVD-RW
 
 ### Kubernetes nodes (VMs)
 
