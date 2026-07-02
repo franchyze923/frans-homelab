@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: networth
+---
+# SQLite database. Ceph RBD block storage (RWO) -- single writer, no NFS
+# stale-handle risk. All finance data lives here, nothing in git.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: networth-data
+  namespace: networth
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: networth
+  namespace: networth
+  labels:
+    app: networth
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce and SQLite wants a single writer.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: networth
+  template:
+    metadata:
+      labels:
+        app: networth
+    spec:
+      containers:
+        - name: networth
+          image: franchyze923/networth-tracker:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: DATA_DIR
+              value: /data
+            # Imported once, only when the database is empty. The Secret is
+            # applied out-of-band (finance data, never in git) and optional --
+            # the app starts fine without it.
+            - name: SEED_FILE
+              value: /seed/seed.json
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: networth-data
+        - name: seed
+          secret:
+            secretName: networth-seed
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: networth
+  namespace: networth
+  labels:
+    app: networth
+spec:
+  type: ClusterIP
+  selector:
+    app: networth
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: networth
+  namespace: networth
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - networth.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: networth
+          port: 5000
