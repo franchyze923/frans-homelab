@@ -483,14 +483,16 @@ spec:
             periodSeconds: 15
             failureThreshold: 6
           resources:
-            # On the idle worker: reserve real cores and allow bursting to most
-            # of the 8-core node so jobs run hard without starving the API.
+            # On the dedicated Ryzen desktop node (10 cores / 32Gi): reserve real
+            # cores and burst hard for imports. Cap at 8 cores (not the full 10) so
+            # postgres (2-core cap) + redis stay unstarved -- the import depends on
+            # the DB, so throttling it would be self-defeating.
             requests:
               memory: "2Gi"
-              cpu: "1"
+              cpu: "2"
             limits:
               memory: "8Gi"
-              cpu: "10"
+              cpu: "8"
       volumes:
         - name: data
           persistentVolumeClaim:
