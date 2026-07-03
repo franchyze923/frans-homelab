@@ -136,16 +136,20 @@ order:
    *"already has an admin"* and the Job moves on).
 2. Logs in as that admin.
 3. **Sets job concurrency** (system-config) to a declared map — merged into the
-   live config so everything else stays default + UI-editable. Tuned for the
-   8-core server + GPU ML box (raises the serialized `videoConversion` default of
-   1, parallelizes thumbnails/metadata, pushes more face/smart-search to the GPU):
+   live config so everything else stays default + UI-editable:
    | job | value | job | value |
    |---|---|---|---|
    | `thumbnailGeneration` | 8 | `videoConversion` | 2 |
-   | `metadataExtraction` | 8 | `faceDetection` | 4 |
-   | `smartSearch` | 4 | | |
+   | `metadataExtraction` | 8 | `faceDetection` | 1 |
+   | `smartSearch` | 1 | | |
 
-   It's reconciled every sync (source of truth is the `JOB_CONCURRENCY` map in
+   CPU-bound jobs (thumbnails/metadata) parallelize on the 8-core server and the
+   serialized `videoConversion` default (1) is lifted to 2. **GPU-bound jobs
+   (`faceDetection`/`smartSearch`) are pinned to 1**: they run on the time-sliced
+   Tesla P4 whose 8 GB VRAM is shared, not partitioned — concurrency >1 there
+   OOMs ONNXRuntime (`BFCArena ... Failed to allocate`) and the jobs fail/retry.
+
+   Reconciled every sync (source of truth is the `JOB_CONCURRENCY` map in
    `library-bootstrap.yaml`), so a UI change to these keys reverts on next sync —
    change the values in the manifest instead.
 4. **Reconciles a declared set of external libraries** (name → import paths).

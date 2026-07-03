@@ -111,11 +111,13 @@ spec:
               fi
 
               # 3. Reconcile job concurrency (declarative; this map is the source
-              #    of truth). Tuned for the 8-core server + GPU ML box: parallelize
-              #    photo work (thumbnails/metadata), lift the serialized transcode
-              #    default (1), and push more face/smart-search jobs to the GPU.
-              #    Merges into the live config so all other settings are preserved.
-              JOB_CONCURRENCY='{"thumbnailGeneration":{"concurrency":8},"metadataExtraction":{"concurrency":8},"videoConversion":{"concurrency":2},"faceDetection":{"concurrency":4},"smartSearch":{"concurrency":4}}'
+              #    of truth). CPU-bound jobs (thumbnails/metadata) parallelize on
+              #    the 8-core server and the serialized transcode default (1) is
+              #    lifted to 2. GPU-bound jobs (faceDetection/smartSearch) run on
+              #    the time-sliced Tesla P4, whose 8GB VRAM is shared (NOT
+              #    partitioned) -- concurrency >1 there OOMs ONNXRuntime, so keep
+              #    them at 1. Merges into live config; all other settings preserved.
+              JOB_CONCURRENCY='{"thumbnailGeneration":{"concurrency":8},"metadataExtraction":{"concurrency":8},"videoConversion":{"concurrency":2},"faceDetection":{"concurrency":1},"smartSearch":{"concurrency":1}}'
               echo "reconciling job concurrency..."
               cfg=$(curl -s "$API/system-config" -H "Authorization: Bearer $TOKEN")
               if [ "$(printf '%s' "$cfg" | jq -r 'type' 2>/dev/null)" != "object" ]; then
