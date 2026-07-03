@@ -20,12 +20,16 @@ Self-hosted photo/video backup (Immich **v3.0.1**), deployed fresh in-cluster.
 > and lands data in the `k8s-pvs` backup folder, neither ideal for a photo library.
 
 ## Secret (out-of-band, NOT in git)
-`immich-secrets` holds `DB_PASSWORD` (alphanumeric only). `secret.yaml` is
-gitignored, so it does **not** come back from a repo clone -- if you lose it,
-recreate it from `secret.example.yaml` (checked into git, kept up to date so
-you're never stuck guessing the shape again):
+`immich-secrets` holds `DB_PASSWORD` (alphanumeric only). It is applied
+**out-of-band** from a gitignored `secret.yaml` and is intentionally NOT a git
+manifest -- do not add a `secret.example.yaml` (or any Secret manifest) into
+this directory: ArgoCD would apply it as the real `immich-secrets` with
+placeholder values and seed Postgres with a bogus password. `secret.yaml` is
+gitignored, so it does not come back from a repo clone -- if you lose it,
+recreate it from this template:
 
 ```yaml
+# workloads/immich/secret.yaml   (gitignored -- do NOT commit)
 apiVersion: v1
 kind: Secret
 metadata:
@@ -34,14 +38,16 @@ metadata:
 type: Opaque
 stringData:
   DB_PASSWORD: CHANGE_ME_alphanumeric_only
-  # Optional -- only needed for the FranPhotos library auto-bootstrap (below):
-  IMMICH_ADMIN_EMAIL: you@example.com
-  IMMICH_ADMIN_PASSWORD: CHANGE_ME_your_immich_admin_password
+  # Optional -- only needed for the FranPhotos library auto-bootstrap (below).
+  # OMIT these entirely unless you set real values; placeholder/bogus creds make
+  # the bootstrap Job fail instead of cleanly no-op'ing.
+  # IMMICH_ADMIN_EMAIL: you@example.com
+  # IMMICH_ADMIN_PASSWORD: your-real-immich-admin-password
 ```
 
 ```sh
-cp workloads/immich/secret.example.yaml workloads/immich/secret.yaml
-# edit DB_PASSWORD in secret.yaml to a real (alphanumeric-only) password
+# paste the block above into workloads/immich/secret.yaml, set a real
+# (alphanumeric-only) DB_PASSWORD, then:
 kubectl apply -f workloads/immich/secret.yaml
 ```
 

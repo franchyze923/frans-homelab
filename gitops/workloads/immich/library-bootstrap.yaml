@@ -8,7 +8,7 @@
 # it doesn't. Safe to run repeatedly.
 #
 # Auth comes from the out-of-band `immich-secrets` Secret. Add these keys to
-# your secret.yaml (see secret.example.yaml); until they're present the job
+# your secret.yaml (see the template in this dir's README.md); until they're present the job
 # just no-ops (exit 0) so it never blocks a sync:
 #   IMMICH_ADMIN_EMAIL
 #   IMMICH_ADMIN_PASSWORD
