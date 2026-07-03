@@ -359,8 +359,8 @@ spec:
               memory: "2Gi"
               cpu: "1"
             limits:
-              memory: "6Gi"
-              cpu: "6"
+              memory: "8Gi"
+              cpu: "8"
               nvidia.com/gpu: 1
       volumes:
         - name: model-cache
@@ -479,11 +479,11 @@ spec:
             # On the idle worker: reserve real cores and allow bursting to most
             # of the 8-core node so jobs run hard without starving the API.
             requests:
-              memory: "1Gi"
+              memory: "2Gi"
               cpu: "1"
             limits:
-              memory: "4Gi"
-              cpu: "5"
+              memory: "8Gi"
+              cpu: "10"
       volumes:
         - name: data
           persistentVolumeClaim:
