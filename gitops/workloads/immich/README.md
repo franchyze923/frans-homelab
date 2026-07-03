@@ -89,9 +89,20 @@ order:
    (only fires when the server has no admin yet — otherwise Immich returns
    *"already has an admin"* and the Job moves on).
 2. Logs in as that admin.
-3. **Ensures the `FranPhotos` external library** exists, pointing at
-   `/mnt/external/FranHomeMedia/Frans_Photos`, creating + scanning it only if a
-   library by that name is missing.
+3. **Reconciles a declared set of external libraries** (name → import paths).
+   For each it creates the library if missing, or updates its import paths to
+   match the declared set, then validates the paths and triggers a scan when
+   anything changed. Currently declared (edit the `reconcile_lib` calls in
+   `library-bootstrap.yaml` to change — that list is the source of truth):
+   | library | import paths |
+   |---|---|
+   | `FranPhotos` | `…/FranHomeMedia/Frans_Photos`, `…/FranHomeMedia/Road Trip to California/all_lumix_pics` |
+   | `FamilyPhotos` | `…/FamilyHomeMedia/Family Photos` |
+   | `ReemaPhotos` | `…/FranHomeMedia/Reema`, `…/FranHomeMedia/Reema's Family/India 2018`, `…/FranHomeMedia/Reema's Family/Scanned Family Photos` |
+
+   **Missing/renamed paths are non-fatal** — Immich accepts them and the hook
+   logs `MISSING: <path>` (via the validate endpoint) and carries on. When a
+   path reappears it's already declared, so the next scan picks it up.
 
 It's fully idempotent — safe to re-run on every sync. Identity comes from
 `immich-secrets`:

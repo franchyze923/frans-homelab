@@ -1,22 +1,28 @@
 # ---------------------------------------------------------------------------
-# Bootstrap Immich on a fresh install (idempotent). Runs as an ArgoCD PostSync
-# hook after every sync and, in order:
+# Bootstrap Immich on a fresh install + keep its external libraries in sync
+# (idempotent). Runs as an ArgoCD PostSync hook after every sync and, in order:
 #   1. Creates the initial ADMIN account (POST /api/auth/admin-sign-up) if the
 #      server has no admin yet -- so a from-scratch rebuild needs no manual UI
 #      signup. Skips cleanly once an admin exists.
 #   2. Logs in as that admin.
-#   3. Ensures the "FranPhotos" EXTERNAL library exists (pointing at
-#      /mnt/external/FranHomeMedia/Frans_Photos), creating + scanning it only if
-#      it's missing.
-# Immich has no declarative K8s object for users/libraries, hence this API job.
-# Safe to run repeatedly.
+#   3. Reconciles a declared set of EXTERNAL libraries (name -> import paths).
+#      For each: creates it if missing, or updates its import paths to match the
+#      declared set; then validates the paths and triggers a scan when anything
+#      changed. The declared list below is the source of truth for import paths.
 #
-# Auth/identity comes from the out-of-band `immich-secrets` Secret. Add these
-# keys to your secret.yaml (see the template in this dir's README.md); until
-# EMAIL+PASSWORD are present the job no-ops (exit 0) so it never blocks a sync:
+# Missing/renamed import paths are non-fatal: Immich accepts them, and the
+# validate step just LOGS them ("MISSING: <path>") and the job continues.
+#
+# To add/change a library, edit the `reconcile_lib` calls at the bottom of the
+# script. Immich has no declarative K8s object for users/libraries, hence this
+# API job. Safe to run repeatedly.
+#
+# Identity comes from the out-of-band `immich-secrets` Secret (see the template
+# in this dir's README.md); until EMAIL+PASSWORD are present the job no-ops
+# (exit 0) so it never blocks a sync:
 #   IMMICH_ADMIN_EMAIL       (required to do anything)
 #   IMMICH_ADMIN_PASSWORD    (required to do anything)
-#   IMMICH_ADMIN_NAME        (optional display name; defaults to the email local-part)
+#   IMMICH_ADMIN_NAME        (optional display name; defaults to email local-part)
 # ---------------------------------------------------------------------------
 apiVersion: batch/v1
 kind: Job
@@ -59,14 +65,12 @@ spec:
                   name: immich-secrets
                   key: IMMICH_ADMIN_NAME
                   optional: true
-            - name: LIBRARY_NAME
-              value: FranPhotos
-            - name: IMPORT_PATH
-              value: /mnt/external/FranHomeMedia/Frans_Photos
           command: ["/bin/sh", "-c"]
           args:
             - |
-              set -eu
+              # Deliberately NOT using `set -e`: a single library/path problem
+              # must be logged and skipped, not abort the whole reconcile.
+              set -u
               API=http://immich-server:2283/api
 
               if [ -z "${IMMICH_ADMIN_EMAIL:-}" ] || [ -z "${IMMICH_ADMIN_PASSWORD:-}" ]; then
@@ -80,7 +84,7 @@ spec:
               until curl -sf "$API/server/ping" >/dev/null 2>&1; do sleep 3; done
 
               # 1. Ensure the initial admin exists (only works when there is no
-              #    admin yet; returns 400 "already has an admin" otherwise).
+              #    admin yet; 400 "already has an admin" otherwise).
               admin_name="${IMMICH_ADMIN_NAME:-${IMMICH_ADMIN_EMAIL%%@*}}"
               echo "ensuring admin account exists ($IMMICH_ADMIN_EMAIL)..."
               su_code=$(curl -s -o /tmp/signup.json -w '%{http_code}' -X POST "$API/auth/admin-sign-up" \
@@ -97,32 +101,88 @@ spec:
               echo "logging in as $IMMICH_ADMIN_EMAIL..."
               login=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json' \
                 -d "$(jq -n --arg e "$IMMICH_ADMIN_EMAIL" --arg p "$IMMICH_ADMIN_PASSWORD" '{email:$e,password:$p}')")
-              token=$(printf '%s' "$login" | jq -r '.accessToken // empty')
-              owner=$(printf '%s' "$login" | jq -r '.userId // empty')
-              if [ -z "$token" ] || [ -z "$owner" ]; then
+              TOKEN=$(printf '%s' "$login" | jq -r '.accessToken // empty')
+              OWNER=$(printf '%s' "$login" | jq -r '.userId // empty')
+              if [ -z "$TOKEN" ] || [ -z "$OWNER" ]; then
                 echo "ERROR: login failed: $login"; exit 1
               fi
 
-              echo "checking for existing library named '$LIBRARY_NAME'..."
-              existing=$(curl -sf "$API/libraries" -H "Authorization: Bearer $token" \
-                | jq -r --arg n "$LIBRARY_NAME" '.[] | select(.name==$n) | .id' | head -n1)
-              if [ -n "$existing" ]; then
-                echo "library '$LIBRARY_NAME' already exists (id=$existing) -- nothing to do."
-                exit 0
-              fi
+              # Snapshot existing libraries once.
+              LIBS=$(curl -sf "$API/libraries" -H "Authorization: Bearer $TOKEN")
+              if [ -z "$LIBS" ]; then echo "ERROR: could not list libraries"; exit 1; fi
 
-              echo "creating external library '$LIBRARY_NAME' -> $IMPORT_PATH"
-              created=$(curl -s -X POST "$API/libraries" -H "Authorization: Bearer $token" \
-                -H 'Content-Type: application/json' \
-                -d "$(jq -n --arg o "$owner" --arg n "$LIBRARY_NAME" --arg ip "$IMPORT_PATH" \
-                      '{ownerId:$o, name:$n, importPaths:[$ip], exclusionPatterns:[]}')")
-              id=$(printf '%s' "$created" | jq -r '.id // empty')
-              if [ -z "$id" ]; then
-                echo "ERROR: create failed: $created"; exit 1
-              fi
-              echo "created library '$LIBRARY_NAME' (id=$id). kicking off initial scan..."
-              curl -sf -X POST "$API/libraries/$id/scan" -H "Authorization: Bearer $token" >/dev/null 2>&1 \
-                && echo "scan queued." || echo "(scan trigger skipped -- run it from the UI if needed)"
+              # 3. Reconcile one external library: name + its import paths ("$@").
+              #    Creates if missing, updates paths to match otherwise; validates
+              #    (logging any missing paths) and scans when something changed.
+              reconcile_lib() {
+                name="$1"; shift
+                # desired paths as a compact JSON array, trailing slashes stripped
+                desired=$(printf '%s\n' "$@" | jq -R . | jq -c 'map(sub("/+$";""))')
+                echo "----- library: $name -----"
+
+                id=$(printf '%s' "$LIBS" | jq -r --arg n "$name" '.[] | select(.name==$n) | .id' | head -n1)
+                changed=0
+
+                if [ -z "$id" ]; then
+                  echo "  creating -> $(printf '%s' "$desired" | jq -c .)"
+                  created=$(curl -s -X POST "$API/libraries" -H "Authorization: Bearer $TOKEN" \
+                    -H 'Content-Type: application/json' \
+                    -d "$(jq -n --arg o "$OWNER" --arg n "$name" --argjson p "$desired" \
+                          '{ownerId:$o, name:$n, importPaths:$p, exclusionPatterns:[]}')")
+                  id=$(printf '%s' "$created" | jq -r '.id // empty')
+                  if [ -z "$id" ]; then echo "  ERROR: create failed: $created"; return 0; fi
+                  echo "  created id=$id"
+                  changed=1
+                else
+                  current=$(printf '%s' "$LIBS" | jq -c --arg n "$name" \
+                    '.[] | select(.name==$n) | .importPaths | sort')
+                  want=$(printf '%s' "$desired" | jq -c 'sort')
+                  if [ "$current" = "$want" ]; then
+                    echo "  exists (id=$id); import paths already up to date."
+                  else
+                    echo "  exists (id=$id); updating import paths"
+                    echo "    from: $current"
+                    echo "    to:   $want"
+                    upd=$(curl -s -o /tmp/upd.json -w '%{http_code}' -X PUT "$API/libraries/$id" \
+                      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+                      -d "$(jq -n --argjson p "$desired" '{importPaths:$p}')")
+                    case "$upd" in
+                      2*) echo "    updated." ; changed=1 ;;
+                      *)  echo "    ERROR: update HTTP $upd: $(cat /tmp/upd.json)"; return 0 ;;
+                    esac
+                  fi
+                fi
+
+                # Validate paths; log any that don't exist and keep going.
+                vres=$(curl -s -X POST "$API/libraries/$id/validate" -H "Authorization: Bearer $TOKEN" \
+                  -H 'Content-Type: application/json' \
+                  -d "$(jq -n --argjson p "$desired" '{importPaths:$p, exclusionPatterns:[]}')")
+                bad=$(printf '%s' "$vres" | jq -r '.importPaths[]? | select(.isValid==false)
+                      | "    MISSING: \(.importPath) (\(.message // "invalid"))"' 2>/dev/null)
+                if [ -n "$bad" ]; then
+                  echo "  path validation warnings (continuing anyway):"
+                  printf '%s\n' "$bad"
+                fi
+
+                if [ "$changed" = "1" ]; then
+                  curl -sf -X POST "$API/libraries/$id/scan" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 \
+                    && echo "  scan queued." || echo "  (scan trigger skipped)"
+                fi
+              }
+
+              # ---- declared external libraries (source of truth) -------------
+              reconcile_lib "FranPhotos" \
+                "/mnt/external/FranHomeMedia/Frans_Photos" \
+                "/mnt/external/FranHomeMedia/Road Trip to California/all_lumix_pics"
+
+              reconcile_lib "FamilyPhotos" \
+                "/mnt/external/FamilyHomeMedia/Family Photos"
+
+              reconcile_lib "ReemaPhotos" \
+                "/mnt/external/FranHomeMedia/Reema" \
+                "/mnt/external/FranHomeMedia/Reema's Family/India 2018" \
+                "/mnt/external/FranHomeMedia/Reema's Family/Scanned Family Photos"
+
               echo "done."
           resources:
             requests: {memory: "32Mi", cpu: "50m"}
