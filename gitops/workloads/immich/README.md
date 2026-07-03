@@ -135,7 +135,20 @@ order:
    (only fires when the server has no admin yet — otherwise Immich returns
    *"already has an admin"* and the Job moves on).
 2. Logs in as that admin.
-3. **Reconciles a declared set of external libraries** (name → import paths).
+3. **Sets job concurrency** (system-config) to a declared map — merged into the
+   live config so everything else stays default + UI-editable. Tuned for the
+   8-core server + GPU ML box (raises the serialized `videoConversion` default of
+   1, parallelizes thumbnails/metadata, pushes more face/smart-search to the GPU):
+   | job | value | job | value |
+   |---|---|---|---|
+   | `thumbnailGeneration` | 8 | `videoConversion` | 2 |
+   | `metadataExtraction` | 8 | `faceDetection` | 4 |
+   | `smartSearch` | 4 | | |
+
+   It's reconciled every sync (source of truth is the `JOB_CONCURRENCY` map in
+   `library-bootstrap.yaml`), so a UI change to these keys reverts on next sync —
+   change the values in the manifest instead.
+4. **Reconciles a declared set of external libraries** (name → import paths).
    For each it creates the library if missing, or updates its import paths to
    match the declared set, then validates the paths and triggers a scan when
    anything changed. Currently declared (edit the `reconcile_lib` calls in

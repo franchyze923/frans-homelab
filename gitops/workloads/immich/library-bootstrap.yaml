@@ -5,7 +5,10 @@
 #      server has no admin yet -- so a from-scratch rebuild needs no manual UI
 #      signup. Skips cleanly once an admin exists.
 #   2. Logs in as that admin.
-#   3. Reconciles a declared set of EXTERNAL libraries (name -> import paths).
+#   3. Reconciles job concurrency (system-config) to a declared map -- tuned for
+#      the 8-core server + GPU ML box; merges into the live config so all other
+#      settings are preserved and stay UI-editable.
+#   4. Reconciles a declared set of EXTERNAL libraries (name -> import paths).
 #      For each: creates it if missing, or updates its import paths to match the
 #      declared set; then validates the paths and triggers a scan when anything
 #      changed. The declared list below is the source of truth for import paths.
@@ -105,6 +108,30 @@ spec:
               OWNER=$(printf '%s' "$login" | jq -r '.userId // empty')
               if [ -z "$TOKEN" ] || [ -z "$OWNER" ]; then
                 echo "ERROR: login failed: $login"; exit 1
+              fi
+
+              # 3. Reconcile job concurrency (declarative; this map is the source
+              #    of truth). Tuned for the 8-core server + GPU ML box: parallelize
+              #    photo work (thumbnails/metadata), lift the serialized transcode
+              #    default (1), and push more face/smart-search jobs to the GPU.
+              #    Merges into the live config so all other settings are preserved.
+              JOB_CONCURRENCY='{"thumbnailGeneration":{"concurrency":8},"metadataExtraction":{"concurrency":8},"videoConversion":{"concurrency":2},"faceDetection":{"concurrency":4},"smartSearch":{"concurrency":4}}'
+              echo "reconciling job concurrency..."
+              cfg=$(curl -s "$API/system-config" -H "Authorization: Bearer $TOKEN")
+              if [ "$(printf '%s' "$cfg" | jq -r 'type' 2>/dev/null)" != "object" ]; then
+                echo "  WARN: could not fetch system-config; skipping concurrency."
+              else
+                newcfg=$(printf '%s' "$cfg" | jq --argjson o "$JOB_CONCURRENCY" '.job = (.job * $o)')
+                if [ "$(printf '%s' "$cfg" | jq -cS '.job')" = "$(printf '%s' "$newcfg" | jq -cS '.job')" ]; then
+                  echo "  job concurrency already up to date."
+                else
+                  cc=$(curl -s -o /tmp/cfg.json -w '%{http_code}' -X PUT "$API/system-config" \
+                    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$newcfg")
+                  case "$cc" in
+                    2*) echo "  updated -> $(printf '%s' "$JOB_CONCURRENCY" | jq -c 'map_values(.concurrency)')" ;;
+                    *)  echo "  WARN: system-config update HTTP $cc: $(head -c 200 /tmp/cfg.json)" ;;
+                  esac
+                fi
               fi
 
               # Snapshot existing libraries once.
