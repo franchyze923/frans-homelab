@@ -43,6 +43,7 @@ stringData:
   # the bootstrap Job fail instead of cleanly no-op'ing.
   # IMMICH_ADMIN_EMAIL: you@example.com
   # IMMICH_ADMIN_PASSWORD: your-real-immich-admin-password
+  # IMMICH_ADMIN_NAME: Your Name        # optional display name
 ```
 
 ```sh
@@ -80,17 +81,36 @@ kubectl apply -f workloads/immich/secret.yaml
   PVC loss here means manually running the restore steps above. Ask if you'd
   like that automated similarly.
 
-## Libraries (auto-created)
-`library-bootstrap.yaml` is an ArgoCD **PostSync hook** Job that ensures the
-`FranPhotos` **external** library exists, pointing at
-`/mnt/external/FranHomeMedia/Frans_Photos`. It's idempotent — logs in as the
-admin, and only creates the library if one by that name doesn't already exist
-(then queues an initial scan).
+## Admin + library bootstrap (auto-created)
+`library-bootstrap.yaml` is an ArgoCD **PostSync hook** Job that brings a
+from-scratch install fully online with no manual UI steps. On every sync it, in
+order:
+1. **Creates the initial admin account** via `POST /api/auth/admin-sign-up`
+   (only fires when the server has no admin yet — otherwise Immich returns
+   *"already has an admin"* and the Job moves on).
+2. Logs in as that admin.
+3. **Ensures the `FranPhotos` external library** exists, pointing at
+   `/mnt/external/FranHomeMedia/Frans_Photos`, creating + scanning it only if a
+   library by that name is missing.
 
-It authenticates with `IMMICH_ADMIN_EMAIL` / `IMMICH_ADMIN_PASSWORD` from
-`immich-secrets`. **Until those keys are present the Job just no-ops** (exit 0),
-so it never blocks a sync. To change the library name or import path, edit the
-`LIBRARY_NAME` / `IMPORT_PATH` env vars in `library-bootstrap.yaml`.
+It's fully idempotent — safe to re-run on every sync. Identity comes from
+`immich-secrets`:
+
+| key | required | purpose |
+|---|---|---|
+| `IMMICH_ADMIN_EMAIL` | yes | admin login / created account |
+| `IMMICH_ADMIN_PASSWORD` | yes | admin password (may contain symbols) |
+| `IMMICH_ADMIN_NAME` | no | display name (defaults to the email local-part) |
+
+**Until `EMAIL`+`PASSWORD` are present the Job no-ops** (exit 0) so it never
+blocks a sync. To change the library, edit `LIBRARY_NAME` / `IMPORT_PATH` in
+`library-bootstrap.yaml`.
+
+> The hook only re-runs on an ArgoCD **sync**. After a fresh install where the
+> Secret already carries the admin creds, the automatic PostSync run does
+> everything. If you add/rotate the admin creds *after* the app is already
+> Synced, trigger one sync (e.g. `kubectl -n argocd patch application immich
+> --type merge -p '{"operation":{"sync":{}}}'`) to fire it.
 
 ## Access
 - Gateway: `immich.franpolignano.com`

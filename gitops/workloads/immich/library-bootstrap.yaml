@@ -1,17 +1,22 @@
 # ---------------------------------------------------------------------------
-# Ensure the "FranPhotos" EXTERNAL library exists (idempotent).
+# Bootstrap Immich on a fresh install (idempotent). Runs as an ArgoCD PostSync
+# hook after every sync and, in order:
+#   1. Creates the initial ADMIN account (POST /api/auth/admin-sign-up) if the
+#      server has no admin yet -- so a from-scratch rebuild needs no manual UI
+#      signup. Skips cleanly once an admin exists.
+#   2. Logs in as that admin.
+#   3. Ensures the "FranPhotos" EXTERNAL library exists (pointing at
+#      /mnt/external/FranHomeMedia/Frans_Photos), creating + scanning it only if
+#      it's missing.
+# Immich has no declarative K8s object for users/libraries, hence this API job.
+# Safe to run repeatedly.
 #
-# Immich libraries only exist via its REST API -- there's no declarative K8s
-# object -- so this runs as an ArgoCD PostSync hook after every sync: it logs
-# in as the admin, checks whether a library named FranPhotos already exists,
-# and creates it (pointing at /mnt/external/FranHomeMedia/Frans_Photos) only if
-# it doesn't. Safe to run repeatedly.
-#
-# Auth comes from the out-of-band `immich-secrets` Secret. Add these keys to
-# your secret.yaml (see the template in this dir's README.md); until they're present the job
-# just no-ops (exit 0) so it never blocks a sync:
-#   IMMICH_ADMIN_EMAIL
-#   IMMICH_ADMIN_PASSWORD
+# Auth/identity comes from the out-of-band `immich-secrets` Secret. Add these
+# keys to your secret.yaml (see the template in this dir's README.md); until
+# EMAIL+PASSWORD are present the job no-ops (exit 0) so it never blocks a sync:
+#   IMMICH_ADMIN_EMAIL       (required to do anything)
+#   IMMICH_ADMIN_PASSWORD    (required to do anything)
+#   IMMICH_ADMIN_NAME        (optional display name; defaults to the email local-part)
 # ---------------------------------------------------------------------------
 apiVersion: batch/v1
 kind: Job
@@ -48,6 +53,12 @@ spec:
                   name: immich-secrets
                   key: IMMICH_ADMIN_PASSWORD
                   optional: true
+            - name: IMMICH_ADMIN_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: immich-secrets
+                  key: IMMICH_ADMIN_NAME
+                  optional: true
             - name: LIBRARY_NAME
               value: FranPhotos
             - name: IMPORT_PATH
@@ -68,6 +79,21 @@ spec:
               echo "waiting for immich-server to be ready..."
               until curl -sf "$API/server/ping" >/dev/null 2>&1; do sleep 3; done
 
+              # 1. Ensure the initial admin exists (only works when there is no
+              #    admin yet; returns 400 "already has an admin" otherwise).
+              admin_name="${IMMICH_ADMIN_NAME:-${IMMICH_ADMIN_EMAIL%%@*}}"
+              echo "ensuring admin account exists ($IMMICH_ADMIN_EMAIL)..."
+              su_code=$(curl -s -o /tmp/signup.json -w '%{http_code}' -X POST "$API/auth/admin-sign-up" \
+                -H 'Content-Type: application/json' \
+                -d "$(jq -n --arg e "$IMMICH_ADMIN_EMAIL" --arg p "$IMMICH_ADMIN_PASSWORD" --arg n "$admin_name" \
+                      '{email:$e, password:$p, name:$n}')")
+              case "$su_code" in
+                2*)  echo "  -> admin account created." ;;
+                400) echo "  -> admin already exists ($(jq -r '.message // empty' </tmp/signup.json)); continuing." ;;
+                *)   echo "  -> WARN: admin-sign-up returned HTTP $su_code: $(cat /tmp/signup.json)" ;;
+              esac
+
+              # 2. Log in as that admin.
               echo "logging in as $IMMICH_ADMIN_EMAIL..."
               login=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json' \
                 -d "$(jq -n --arg e "$IMMICH_ADMIN_EMAIL" --arg p "$IMMICH_ADMIN_PASSWORD" '{email:$e,password:$p}')")
