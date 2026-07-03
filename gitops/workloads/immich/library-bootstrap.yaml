@@ -1,0 +1,103 @@
+# ---------------------------------------------------------------------------
+# Ensure the "FranPhotos" EXTERNAL library exists (idempotent).
+#
+# Immich libraries only exist via its REST API -- there's no declarative K8s
+# object -- so this runs as an ArgoCD PostSync hook after every sync: it logs
+# in as the admin, checks whether a library named FranPhotos already exists,
+# and creates it (pointing at /mnt/external/FranHomeMedia/Frans_Photos) only if
+# it doesn't. Safe to run repeatedly.
+#
+# Auth comes from the out-of-band `immich-secrets` Secret. Add these keys to
+# your secret.yaml (see secret.example.yaml); until they're present the job
+# just no-ops (exit 0) so it never blocks a sync:
+#   IMMICH_ADMIN_EMAIL
+#   IMMICH_ADMIN_PASSWORD
+# ---------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: immich-library-bootstrap
+  namespace: immich
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: immich-library-bootstrap
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: docker.io/library/alpine:3
+          env:
+            # Optional: if these keys aren't in immich-secrets yet, the vars are
+            # simply unset and the script no-ops instead of failing the sync.
+            - name: IMMICH_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: immich-secrets
+                  key: IMMICH_ADMIN_EMAIL
+                  optional: true
+            - name: IMMICH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich-secrets
+                  key: IMMICH_ADMIN_PASSWORD
+                  optional: true
+            - name: LIBRARY_NAME
+              value: FranPhotos
+            - name: IMPORT_PATH
+              value: /mnt/external/FranHomeMedia/Frans_Photos
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              API=http://immich-server:2283/api
+
+              if [ -z "${IMMICH_ADMIN_EMAIL:-}" ] || [ -z "${IMMICH_ADMIN_PASSWORD:-}" ]; then
+                echo "IMMICH_ADMIN_EMAIL/PASSWORD not set in immich-secrets yet -- skipping (no-op)."
+                exit 0
+              fi
+
+              apk add --no-cache curl jq >/dev/null
+
+              echo "waiting for immich-server to be ready..."
+              until curl -sf "$API/server/ping" >/dev/null 2>&1; do sleep 3; done
+
+              echo "logging in as $IMMICH_ADMIN_EMAIL..."
+              login=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+                -d "$(jq -n --arg e "$IMMICH_ADMIN_EMAIL" --arg p "$IMMICH_ADMIN_PASSWORD" '{email:$e,password:$p}')")
+              token=$(printf '%s' "$login" | jq -r '.accessToken // empty')
+              owner=$(printf '%s' "$login" | jq -r '.userId // empty')
+              if [ -z "$token" ] || [ -z "$owner" ]; then
+                echo "ERROR: login failed: $login"; exit 1
+              fi
+
+              echo "checking for existing library named '$LIBRARY_NAME'..."
+              existing=$(curl -sf "$API/libraries" -H "Authorization: Bearer $token" \
+                | jq -r --arg n "$LIBRARY_NAME" '.[] | select(.name==$n) | .id' | head -n1)
+              if [ -n "$existing" ]; then
+                echo "library '$LIBRARY_NAME' already exists (id=$existing) -- nothing to do."
+                exit 0
+              fi
+
+              echo "creating external library '$LIBRARY_NAME' -> $IMPORT_PATH"
+              created=$(curl -s -X POST "$API/libraries" -H "Authorization: Bearer $token" \
+                -H 'Content-Type: application/json' \
+                -d "$(jq -n --arg o "$owner" --arg n "$LIBRARY_NAME" --arg ip "$IMPORT_PATH" \
+                      '{ownerId:$o, name:$n, importPaths:[$ip], exclusionPatterns:[]}')")
+              id=$(printf '%s' "$created" | jq -r '.id // empty')
+              if [ -z "$id" ]; then
+                echo "ERROR: create failed: $created"; exit 1
+              fi
+              echo "created library '$LIBRARY_NAME' (id=$id). kicking off initial scan..."
+              curl -sf -X POST "$API/libraries/$id/scan" -H "Authorization: Bearer $token" >/dev/null 2>&1 \
+                && echo "scan queued." || echo "(scan trigger skipped -- run it from the UI if needed)"
+              echo "done."
+          resources:
+            requests: {memory: "32Mi", cpu: "50m"}
+            limits: {memory: "128Mi", cpu: "500m"}

@@ -34,6 +34,9 @@ metadata:
 type: Opaque
 stringData:
   DB_PASSWORD: CHANGE_ME_alphanumeric_only
+  # Optional -- only needed for the FranPhotos library auto-bootstrap (below):
+  IMMICH_ADMIN_EMAIL: you@example.com
+  IMMICH_ADMIN_PASSWORD: CHANGE_ME_your_immich_admin_password
 ```
 
 ```sh
@@ -70,6 +73,18 @@ kubectl apply -f workloads/immich/secret.yaml
   automatically when their PVC comes up empty). Recovering the DB after a real
   PVC loss here means manually running the restore steps above. Ask if you'd
   like that automated similarly.
+
+## Libraries (auto-created)
+`library-bootstrap.yaml` is an ArgoCD **PostSync hook** Job that ensures the
+`FranPhotos` **external** library exists, pointing at
+`/mnt/external/FranHomeMedia/Frans_Photos`. It's idempotent — logs in as the
+admin, and only creates the library if one by that name doesn't already exist
+(then queues an initial scan).
+
+It authenticates with `IMMICH_ADMIN_EMAIL` / `IMMICH_ADMIN_PASSWORD` from
+`immich-secrets`. **Until those keys are present the Job just no-ops** (exit 0),
+so it never blocks a sync. To change the library name or import path, edit the
+`LIBRARY_NAME` / `IMPORT_PATH` env vars in `library-bootstrap.yaml`.
 
 ## Access
 - Gateway: `immich.franpolignano.com`
