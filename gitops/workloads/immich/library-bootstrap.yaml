@@ -117,7 +117,7 @@ spec:
               reconcile_lib() {
                 name="$1"; shift
                 # desired paths as a compact JSON array, trailing slashes stripped
-                desired=$(printf '%s\n' "$@" | jq -R . | jq -c 'map(sub("/+$";""))')
+                desired=$(printf '%s\n' "$@" | jq -Rnc '[inputs | sub("/+$";"")]')
                 echo "----- library: $name -----"
 
                 id=$(printf '%s' "$LIBS" | jq -r --arg n "$name" '.[] | select(.name==$n) | .id' | head -n1)
