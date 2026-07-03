@@ -1,6 +1,6 @@
 # immich
 
-Self-hosted photo/video backup (Immich **v2.7.5**), deployed fresh in-cluster.
+Self-hosted photo/video backup (Immich **v3.0.1**), deployed fresh in-cluster.
 
 ## Components
 - `immich-server` — API + web UI (`:2283`)
@@ -21,11 +21,55 @@ Self-hosted photo/video backup (Immich **v2.7.5**), deployed fresh in-cluster.
 
 ## Secret (out-of-band, NOT in git)
 `immich-secrets` holds `DB_PASSWORD` (alphanumeric only). `secret.yaml` is
-gitignored. Apply it before the app syncs:
+gitignored, so it does **not** come back from a repo clone -- if you lose it,
+recreate it from `secret.example.yaml` (checked into git, kept up to date so
+you're never stuck guessing the shape again):
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: immich-secrets
+  namespace: immich
+type: Opaque
+stringData:
+  DB_PASSWORD: CHANGE_ME_alphanumeric_only
+```
 
 ```sh
+cp workloads/immich/secret.example.yaml workloads/immich/secret.yaml
+# edit DB_PASSWORD in secret.yaml to a real (alphanumeric-only) password
 kubectl apply -f workloads/immich/secret.yaml
 ```
+
+> **If the `immich-postgres` PVC still has data on it** (i.e. you only lost
+> the Secret, not the volume), the live database already has the *old*
+> password baked in from its original `initdb` -- Postgres ignores
+> `POSTGRES_PASSWORD` on every start after the first. `immich-postgres` will
+> start fine either way, but `immich-server` will fail to authenticate until
+> you align the DB to match the new secret:
+> ```sh
+> kubectl exec -it -n immich deploy/immich-postgres -- psql -U postgres -c \
+>   "ALTER USER postgres WITH PASSWORD '<same password as DB_PASSWORD above>';"
+> ```
+> (Works without knowing the old password -- local socket connections from
+> inside the container use trust auth.)
+
+## Backups & restore
+- **DB**: `immich-db-backup` CronJob (`db-backup.yaml`) runs `pg_dumpall` nightly
+  at 3am to NFS (`FranArchives/k8s-pvs/immich`, off Ceph), keeps the 7 most
+  recent dumps. Restore is a **manual** procedure -- steps are in the comment
+  header of `db-backup.yaml` (scale `immich-server` to 0, load the dump into a
+  fresh `immich-postgres`, scale back up).
+- **Library** (the actual photos/videos): not backed up separately here --
+  they live on the Unraid NFS share (`FranData/immich`) with `Retain` reclaim
+  policy, so they survive a PVC/cluster rebuild by design; back them up at the
+  NAS level (e.g. Unraid's own snapshot/backup jobs).
+- Unlike jellyfin/plex/radarr/etc., there is **no init-container auto-restore**
+  wired up for `immich-postgres` (those apps restore a config tarball from NFS
+  automatically when their PVC comes up empty). Recovering the DB after a real
+  PVC loss here means manually running the restore steps above. Ask if you'd
+  like that automated similarly.
 
 ## Access
 - Gateway: `immich.franpolignano.com`
@@ -35,5 +79,6 @@ kubectl apply -f workloads/immich/secret.yaml
 ## Notes
 - Machine-learning URL defaults to `http://immich-machine-learning:3003` — the
   service is named to match, so no extra config needed.
-- Image versions are pinned to `v2.7.5`; bump server + ML together when upgrading
-  (and check the release notes for DB image changes).
+- Image versions are pinned to `v3.0.1`; bump server + ML together when upgrading
+  (and check the release notes for DB image changes). The Postgres/VectorChord
+  image tag is independent and only needs bumping if Immich's docs call for it.
