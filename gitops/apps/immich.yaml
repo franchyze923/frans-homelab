@@ -11,6 +11,12 @@ spec:
     repoURL: https://github.com/franchyze923/frans-homelab.git
     targetRevision: main
     path: gitops/workloads/immich
+    directory:
+      # secret.example.yaml is a TEMPLATE, not a live manifest -- exclude it so
+      # ArgoCD never applies it as the real `immich-secrets` (doing so once seeded
+      # Postgres with the placeholder DB_PASSWORD). The real secret is applied
+      # out-of-band from the gitignored secret.yaml.
+      exclude: 'secret.example.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: immich
