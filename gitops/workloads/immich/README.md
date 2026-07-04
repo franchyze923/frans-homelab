@@ -187,6 +187,25 @@ of truth — the reconciler PUTs each library to match it).
 > Synced, trigger one sync (e.g. `kubectl -n argocd patch application immich
 > --type merge -p '{"operation":{"sync":{}}}'`) to fire it.
 
+## ML self-healer
+`ml-healer.yaml` is a CronJob (every 5 min) that restarts `immich-machine-learning`
+when its GPU gets wedged. The ML service's ONNX Runtime CUDA arena grows greedily
+and can consume all of the time-sliced P4's 8 GB VRAM; inference then fails with
+`CUBLAS failure` / `Failed to allocate` and the pod returns HTTP 500 for every
+job — but its **TCP readiness probe still passes**, so k8s never restarts it and
+face-detection/OCR/smart-search jobs fail-and-retry forever.
+
+The healer scans the ML pod's recent logs for that GPU-OOM signature and, above a
+threshold (40 errors in an 8-min window), does a `rollout restart` — which resets
+the arena and frees VRAM (observed ~7.6 GB → ~2.5 GB). Healthy runs are a no-op,
+and a freshly restarted pod has no old errors in the window, so it can't loop. It
+runs under a minimal namespaced ServiceAccount (read pods/logs, patch the ML
+deployment). Tune `WINDOW`/`THRESHOLD` via the CronJob env.
+
+> This is a safety net, not a cure — the arena still creeps. To reduce how often
+> it trips: disable OCR (biggest GPU-job load), set `MACHINE_LEARNING_MODEL_TTL`
+> so idle models unload, and/or use a smaller face model.
+
 ## Access
 - Gateway: `immich.franpolignano.com`
 - LoadBalancer: `192.168.40.201:2283` (shared `platform` IP) — use this as the

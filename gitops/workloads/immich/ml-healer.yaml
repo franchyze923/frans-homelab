@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------------------
+# immich-machine-learning self-healer.
+#
+# The ML service's ONNX Runtime CUDA arena grows greedily and can balloon to
+# ~all of the time-sliced P4's 8GB VRAM. When that happens, inference fails with
+# "CUBLAS failure" / "Failed to allocate" and the ML pod returns HTTP 500 for
+# every job -- but its TCP readiness probe still passes, so k8s never restarts
+# it and face-detection/OCR/smart-search jobs fail+retry forever (wedged).
+#
+# This CronJob scans the ML pod's recent logs for that GPU-OOM signature and,
+# above a threshold, does a `rollout restart` -- which resets the arena and
+# frees VRAM (observed to drop ~7.6GB -> ~2.5GB). Healthy runs are a no-op, and
+# a freshly-restarted pod has no old errors in the window, so it won't loop.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: immich-ml-healer
+  namespace: immich
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: immich-ml-healer
+  namespace: immich
+rules:
+  # read the ML pod + its logs (to detect the wedge)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  # find pods behind the deployment, and rollout-restart it
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: immich-ml-healer
+  namespace: immich
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: immich-ml-healer
+subjects:
+  - kind: ServiceAccount
+    name: immich-ml-healer
+    namespace: immich
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: immich-ml-healer
+  namespace: immich
+spec:
+  schedule: "*/5 * * * *"          # check every 5 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: immich-ml-healer
+          restartPolicy: Never
+          containers:
+            - name: healer
+              image: docker.io/alpine/k8s:1.31.1   # bundles kubectl + shell
+              env:
+                - name: DEPLOY
+                  value: immich-machine-learning
+                - name: WINDOW
+                  value: "8m"        # log look-back; overlaps the 5m schedule
+                - name: THRESHOLD
+                  value: "40"        # a real wedge emits hundreds/min; healthy ~0
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  NS=immich
+                  # Count GPU-OOM / CUBLAS launch failures in the ML pod's recent logs.
+                  errs=$(kubectl -n "$NS" logs "deploy/$DEPLOY" --since="$WINDOW" 2>/dev/null \
+                    | grep -cE "CUBLAS failure|Failed to allocate|failed to launch on the GPU|BFCArena" || true)
+                  echo "[$(date -u +%H:%M:%S)] ML GPU-OOM errors in last $WINDOW: $errs (threshold $THRESHOLD)"
+                  if [ "${errs:-0}" -ge "$THRESHOLD" ]; then
+                    echo "ML appears GPU-wedged -> rollout restart deploy/$DEPLOY"
+                    kubectl -n "$NS" rollout restart "deploy/$DEPLOY"
+                    echo "restart issued."
+                  else
+                    echo "healthy; no action."
+                  fi
+              resources:
+                requests: {memory: "32Mi", cpu: "25m"}
+                limits: {memory: "128Mi", cpu: "250m"}
