@@ -111,6 +111,7 @@ backups (anything too big or recreatable to keep on Ceph).
 |---|---|
 | `open-webui` | Chat UI + `ollama` (runs on the GPU) |
 | `weight-dashboard` | Withings body-composition dashboard (feeds `weight-exporter`) |
+| `steps-dashboard` | Garmin daily-steps dashboard (hourly Garmin Connect sync) |
 | `heimdall` | Homelab landing page |
 | `demo`, `demo2`, `python-demo`, `keycloak-demo-app` | Demos / examples |
 
@@ -121,7 +122,8 @@ Apps are reachable two ways:
 - **Gateway hostnames** (`*.franpolignano.com`, TLS via the wildcard cert) —
   for web UIs, via `HTTPRoute` on `main-gateway` (`192.168.40.202`).
   e.g. `plex`, `jellyfin`, `radarr`, `sonarr`, `sabnzbd`, `grafana`,
-  `prometheus`, `gitea`, `keycloak`, `weight-dashboard`, `metube`, `tautulli`, `frigate`.
+  `prometheus`, `gitea`, `keycloak`, `weight-dashboard`, `steps-dashboard`,
+  `metube`, `tautulli`, `frigate`.
 - **LoadBalancer IPs** (Cilium LB IPAM, pool `192.168.40.200-203`) — for direct
   `IP:port` access. Most share **`192.168.40.201`** via the
   `lbipam.cilium.io/sharing-key: "platform"` annotation (each on its own port):

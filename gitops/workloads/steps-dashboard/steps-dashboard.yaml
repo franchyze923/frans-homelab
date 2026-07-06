@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: steps-dashboard
+---
+# SQLite step history + Garmin OAuth token store (/data/garmin-tokens). The
+# app refreshes tokens in place, so this must be writable + persistent. Ceph
+# RBD (no NFS stale-handle risk).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: steps-dashboard-data
+  namespace: steps-dashboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: steps-dashboard
+  namespace: steps-dashboard
+  labels:
+    app: steps-dashboard
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce, SQLite wants a single writer, and two
+  # instances must never refresh the same Garmin token store at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: steps-dashboard
+  template:
+    metadata:
+      labels:
+        app: steps-dashboard
+    spec:
+      containers:
+        - name: steps-dashboard
+          image: franchyze923/steps-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: DATA_DIR
+              value: /data
+            # Garmin Connect credentials (out-of-band Secret, gitignored).
+            # Optional: only needed until the token store on the PVC exists —
+            # the app resumes from /data/garmin-tokens on its own after that.
+            - name: GARMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: garmin-creds
+                  key: GARMIN_EMAIL
+                  optional: true
+            - name: GARMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: garmin-creds
+                  key: GARMIN_PASSWORD
+                  optional: true
+            - name: SYNC_INTERVAL_MINUTES
+              value: "60"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: steps-dashboard-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: steps-dashboard
+  namespace: steps-dashboard
+  labels:
+    app: steps-dashboard
+spec:
+  type: ClusterIP
+  selector:
+    app: steps-dashboard
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: steps-dashboard
+  namespace: steps-dashboard
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - steps.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: steps-dashboard
+          port: 5000

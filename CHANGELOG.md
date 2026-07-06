@@ -4,6 +4,22 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-06
+
+### steps-dashboard: Garmin daily-steps dashboard
+New app at `steps.franpolignano.com` showing daily step counts from the Garmin
+watch. Flask/gunicorn (`franchyze923/steps-dashboard`, source in
+`~/repos/steps-dashboard`), background thread pulls Garmin Connect hourly via
+the unofficial `garminconnect` library (official API needs business approval),
+SQLite + OAuth token store on a 1 Gi `rook-ceph-block` PVC, first sync
+backfills a year. Stat cards (today vs. goal, 7/30-day averages, best day,
+goal streak) + SVG bar chart with goal line; `/metrics` for Prometheus.
+Credentials in an out-of-band `garmin-creds` Secret (template in the workload
+README) — only used to mint tokens; MFA accounts seed tokens via
+`login_local.py` + `kubectl cp`. Chose server-side Garmin pull over
+iPhone-pedometer push (Health Auto Export): the watch counts 24/7 without the
+phone, and nothing depends on flaky iOS background automations.
+
 ## 2026-06-29
 
 ### Hardware inventory: audited all 4 physical hosts, uniform README table
