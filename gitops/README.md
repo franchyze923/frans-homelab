@@ -24,10 +24,16 @@ To deploy: edit/add manifests, commit, push. Argo syncs within a few minutes
 
 ## Cluster
 
-- **kubeadm** cluster: 1 control-plane + 2 workers (Rocky Linux) + 1 GPU node
-  (`ubuntu24-gpu-box`, Ubuntu, Tesla P4) + 1 arm64 node (`mac-m1-worker`, an M1
-  Mac VM) + 1 Ryzen node (`ubuntu-26-desktop-node`, Ubuntu 26.04, doubles as an
-  XFCE desktop). **Mixed-architecture** (5× amd64 + 1× arm64).
+- **kubeadm** cluster, **HA control plane (2026-07-07)**: 3 masters on 3
+  physical machines — `k8s-cluster-prod-master` (R720 VM),
+  `k8s-cp-old-ryzen-node` (Ryzen Proxmox VM, `.108`), `k8s-cp-truenas-node`
+  (TrueNAS VM, `.249`) — behind **kube-vip VIP `192.168.40.171`** (API
+  endpoint for kubelets, Cilium, kubeconfigs). Workers: 2× Rocky (R720) +
+  1 GPU node (`ubuntu24-gpu-box`, Ubuntu, Tesla P4) + 1 arm64 node
+  (`mac-m1-worker`, an M1 Mac VM) + 1 Ryzen node (`ubuntu-26-desktop-node`,
+  Ubuntu 26.04, doubles as an XFCE desktop). **Mixed-architecture**
+  (7× amd64 + 1× arm64). Rook Ceph MONs pinned via `ceph-mon=true` labels to
+  one node per physical machine.
 - **Proxmox hosts (2):**
   - **Dell R720**, dual Xeon E5-2660 v2 (20c/40t) — runs the control-plane + 2
     Rocky workers + the M1 arm64 VM off a single NVMe (`speedy-nvme-drive`).

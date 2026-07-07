@@ -4,6 +4,35 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-07
+
+### Control plane is now HA: 3 masters on 3 physical machines
+Converted the kubeadm cluster from a single control plane to three, one per
+physical host: `k8s-cluster-prod-master` (R720), `k8s-cp-old-ryzen-node`
+(192.168.40.108, Ryzen Proxmox), `k8s-cp-truenas-node` (192.168.40.249,
+TrueNAS VM on the reclaimed SSD). The API lives on a **kube-vip VIP,
+`192.168.40.171`** (ARP mode, static pods on all three masters, leader
+election; gotcha: the static-pod manifest needs `hostAliases` mapping
+`kubernetes` → 127.0.0.1 or it can't reach the API). `controlPlaneEndpoint`
+set via `kubeadm init phase upload-config`, apiserver cert regenerated with
+the VIP SAN (hot-reloaded by the apiserver, zero downtime), `cluster-info` +
+every `kubelet.conf` + Cilium's `KUBERNETES_SERVICE_HOST` (DaemonSet +
+operator env) re-pointed at the VIP. etcd: 3 voting members, one per machine.
+
+Also spread the **Rook Ceph MONs** across the same three machines (they were
+all on R720 VMs): nodes labeled `ceph-mon=true`, CephCluster mon placement
+pinned to that label, `allowMultiplePerNode: false`, then failed over mon-a→d
+(ubuntu-26-desktop-node) and mon-b→e (k8s-cp-truenas-node) one at a time.
+
+**Failover tested for real**: powered off the original master VM — VIP moved,
+API stayed up, etcd served 2/3, Ceph went degraded-but-serving (OSDs are
+still all on R720 — next project), steps/networth apps answered fine. Powered
+back on, everything rejoined, HEALTH_OK. Known stragglers still pointing at
+.172: ubuntu24-gpu-box kubelet (no passwordless sudo) and the offline
+mac-m1-worker — fix with
+`sed -i "s|40.172:6443|40.171:6443|" /etc/kubernetes/kubelet.conf && systemctl restart kubelet`.
+`vcluster.sh` updated to use the VIP.
+
 ## 2026-07-06
 
 ### etcd-backup: nightly etcd snapshots to the NAS
