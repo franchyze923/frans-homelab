@@ -137,6 +137,10 @@ spec:
                   key: CLIENT_SECRET
             - name: ENABLE_OAUTH_SIGNUP
               value: "true"
+            # Link Keycloak logins to pre-existing local accounts by email
+            # (safe: our own IdP, verified emails only).
+            - name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL
+              value: "true"
           volumeMounts:
             - name: data
               mountPath: /app/backend/data
