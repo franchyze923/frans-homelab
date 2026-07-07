@@ -6,6 +6,23 @@ forward, every change gets an entry here.
 
 ## 2026-07-07
 
+### Ceph OSDs: one per physical drive — any single drive can now die
+Restructured from 3 OSDs all on the `pve` NVMe to 3 OSDs on 3 drives:
+moved master-1's OSD disk to the 870 EVO (live `qm disk move`, Ceph never
+noticed), added a 135 G zvol (`VM_Pool/for-ceph`) to `k8s-cp-truenas-node` —
+Rook auto-consumed it (`useAllDevices: true`; the disk only appears in the VM
+after a TrueNAS VM restart) — then drained (`ceph osd out`) and purged the
+now-redundant worker-2 OSD and deleted its virtual disk (else Rook re-eats
+it). Also fixed stale CRUSH weights (the 150 G disks were weighted as 100 G,
+so the slowest/1GbE OSD was getting the *largest* data share). With
+one-OSD-per-node and `failureDomain: host`, replicas now always span two
+drives — no CRUSH zone config needed. Benchmarked all OSDs
+(`ceph tell osd.N bench`): comparable once idle (~86–183 MiB/s, 4–5.5 k IOPS
+4K; the TrueNAS DRAM-less SSD looked awful mid-backfill — 641 IOPS — but
+re-benched clean at 5.5 k). NVMe allocation dropped ~300 G. ~185 GiB usable,
+HEALTH_OK. Caveat unchanged: whole-R720 loss can still strand PGs whose
+replica pair was 980+870.
+
 ### Control plane is now HA: 3 masters on 3 physical machines
 Converted the kubeadm cluster from a single control plane to three, one per
 physical host: `k8s-cluster-prod-master` (R720), `k8s-cp-old-ryzen-node`

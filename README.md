@@ -39,9 +39,9 @@ Primary Proxmox host — runs master-1, the Rocky workers, and the M1 VM.
 - **RAM:** 192 GB DDR3-1866 — 12× 16 GB, 188 GiB usable (24 slots, max 1.5 TB)
 - **OS:** Proxmox VE 9.2.3 / Debian 13 (kernel 7.0.6)
 - **Storage:** 1 TB Samsung 980 PRO NVMe (`speedy-nvme-drive` LVM-thin — all
-  k8s VMs incl. master-1's 100 G OS + 150 G Ceph OSD disks; ~67% allocated) +
-  500 GB Samsung 870 EVO SATA SSD (Proxmox OS; its `local-lvm` is ~97% free —
-  ~345 G of spare SSD on this host)
+  k8s VM OS disks + worker-1's 150 G Ceph OSD; ~460 G free) + 500 GB Samsung
+  870 EVO SATA SSD (Proxmox OS on `local-lvm`, plus master-1's 150 G Ceph OSD
+  disk — moved off the NVMe 2026-07-07 for drive-level Ceph redundancy)
 
 #### `fran` — Gigabyte B450M DS3H · `192.168.40.9`
 Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest per-core CPU → preferred home for CPU-bound workloads.
@@ -85,10 +85,10 @@ kubeconfigs, kubelets, and Cilium):
 
 | Node | Arch | Runs on | Role |
 |---|---|---|---|
-| `k8s-cluster-prod-master` | amd64 | `pve` (R720), VM 135 (`.172`) | Control plane 1/3 + Ceph OSD + mon `c` |
+| `k8s-cluster-prod-master` | amd64 | `pve` (R720), VM 135 (`.172`) | Control plane 1/3 + Ceph OSD (870 EVO) + mon `c` |
 | `k8s-cp-old-ryzen-node` | amd64 | `fran` (B450M), VM 101 (`.108`, 2 vCPU / 8 GiB / 50 GiB) | Control plane 2/3 |
-| `k8s-cp-truenas-node` | amd64 | `truenas` VM (`.249`, 2 vCPU / 8 GiB / 50 GiB, on `VM_Pool` SSD) | Control plane 3/3 + mon `e` |
-| worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers + Ceph OSDs |
+| `k8s-cp-truenas-node` | amd64 | `truenas` VM (`.249`, 2 vCPU / 8 GiB / 50 GiB, on `VM_Pool` SSD) | Control plane 3/3 + Ceph OSD (135 G zvol) + mon `e` |
+| worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers (worker-1 also carries a Ceph OSD on the NVMe) |
 | `ubuntu24-gpu-box` | amd64 | **Tesla P4** (GPU passthrough) | GPU workloads (Plex, ollama, Frigate, Immich-ML) |
 | `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.76`, 8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
 | `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
@@ -107,7 +107,18 @@ kubeconfigs, kubelets, and Cilium):
 
 > ⚠️ `/mnt/user` is shfs (FUSE) and hands out unstable NFS handles → pods hit `ESTALE`. Mitigated by setting `FranData` array-only (`shareUseCache=no`) + the `nfs-mount-healer` app. See [`gitops/README.md`](gitops/README.md) for detail.
 
-**Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs (one per Rocky node, on the `pve` NVMe), `size=2`, ~210 GiB usable. MONs `c`/`d`/`e` pinned via `ceph-mon=true` node labels to **one per physical machine** (R720 / B450M / truenas) — mon quorum survives any single host, but ⚠️ **all OSDs still share the one `pve` NVMe**, so data does not (yet). **Managed out-of-band** (not in Git) — runbook in [`gitops/README.md`](gitops/README.md).
+**Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs, **one per
+physical drive** (2026-07-07): `osd.3` 150 G on the `pve` 980 PRO NVMe
+(worker-1), `osd.4` 150 G on the `pve` 870 EVO (master), `osd.0` 135 G on the
+truenas `VM_Pool` SSD (`k8s-cp-truenas-node`, zvol `VM_Pool/for-ceph`).
+`size=2` + one-OSD-per-node ⇒ every PG's replicas land on two different
+drives — **any single drive can die without data loss** (whole-R720 loss
+still risks PGs whose pair was 980+870). ~185 GiB usable. All three OSDs
+bench comparably (~86–183 MiB/s, ~4–5.5 k IOPS 4K). MONs `c`/`d`/`e` pinned
+via `ceph-mon=true` node labels to one per physical machine. ⚠️ CephCluster
+runs `useAllNodes/useAllDevices: true` — any empty raw disk attached to any
+node becomes an OSD automatically. **Managed out-of-band** (not in Git) —
+runbook in [`gitops/README.md`](gitops/README.md).
 
 ---
 
