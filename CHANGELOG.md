@@ -16,10 +16,13 @@ now-redundant worker-2 OSD and deleted its virtual disk (else Rook re-eats
 it). Also fixed stale CRUSH weights (the 150 G disks were weighted as 100 G,
 so the slowest/1GbE OSD was getting the *largest* data share). With
 one-OSD-per-node and `failureDomain: host`, replicas now always span two
-drives — no CRUSH zone config needed. Benchmarked all OSDs
-(`ceph tell osd.N bench`): comparable once idle (~86–183 MiB/s, 4–5.5 k IOPS
-4K; the TrueNAS DRAM-less SSD looked awful mid-backfill — 641 IOPS — but
-re-benched clean at 5.5 k). NVMe allocation dropped ~300 G. ~185 GiB usable,
+drives — no CRUSH zone config needed. Benchmarked all OSDs on the idle
+cluster (`ceph tell osd.N bench`, medians of repeat runs): 4M writes
+175 / 165 / 65 MiB/s and 4K sync 7.6 k / 4.2 k / 5.9 k IOPS for
+osd.4 (870 EVO) / osd.3 (980 PRO) / osd.0 (TrueNAS); the TrueNAS DRAM-less
+SSD had looked awful **mid-backfill** (641 IOPS) — never benchmark during
+recovery. Cluster-level `rados bench`: 67 MB/s write (gated by size=2 over
+1 GbE), 90 MB/s seq read. NVMe allocation dropped ~300 G. ~185 GiB usable,
 HEALTH_OK. Caveat unchanged: whole-R720 loss can still strand PGs whose
 replica pair was 980+870.
 
@@ -44,9 +47,9 @@ pinned to that label, `allowMultiplePerNode: false`, then failed over mon-a→d
 **Failover tested for real**: powered off the original master VM — VIP moved,
 API stayed up, etcd served 2/3, Ceph went degraded-but-serving (OSDs are
 still all on R720 — next project), steps/networth apps answered fine. Powered
-back on, everything rejoined, HEALTH_OK. Known stragglers still pointing at
-.172: ubuntu24-gpu-box kubelet (no passwordless sudo) and the offline
-mac-m1-worker — fix with
+back on, everything rejoined, HEALTH_OK. ubuntu24-gpu-box's kubelet was
+re-pointed later the same day (verified connecting only to the VIP); the one
+remaining straggler is the offline mac-m1-worker — when it returns, fix with
 `sed -i "s|40.172:6443|40.171:6443|" /etc/kubernetes/kubelet.conf && systemctl restart kubelet`.
 `vcluster.sh` updated to use the VIP.
 

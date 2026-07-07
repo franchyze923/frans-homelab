@@ -114,7 +114,7 @@ truenas `VM_Pool` SSD (`k8s-cp-truenas-node`, zvol `VM_Pool/for-ceph`).
 `size=2` + one-OSD-per-node ⇒ every PG's replicas land on two different
 drives — **any single drive can die without data loss** (whole-R720 loss
 still risks PGs whose pair was 980+870). ~185 GiB usable. All three OSDs
-bench comparably (~86–183 MiB/s, ~4–5.5 k IOPS 4K). MONs `c`/`d`/`e` pinned
+bench healthy when idle (65–175 MiB/s 4M writes, ~4.2–7.6 k IOPS 4K). MONs `c`/`d`/`e` pinned
 via `ceph-mon=true` node labels to one per physical machine. ⚠️ CephCluster
 runs `useAllNodes/useAllDevices: true` — any empty raw disk attached to any
 node becomes an OSD automatically. **Managed out-of-band** (not in Git) —
