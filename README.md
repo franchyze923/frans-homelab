@@ -33,12 +33,15 @@ frans-homelab/
 The four bare-metal machines (Kubernetes nodes are **VMs on top of these** — see the next table). Inventoried live over SSH, 2026-06-29.
 
 #### `pve` — Dell PowerEdge R720 · `192.168.40.10`
-Primary Proxmox host — runs the control-plane, Rocky workers, and M1 VM.
+Primary Proxmox host — runs master-1, the Rocky workers, and the M1 VM.
 
 - **CPU:** 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz
 - **RAM:** 192 GB DDR3-1866 — 12× 16 GB, 188 GiB usable (24 slots, max 1.5 TB)
 - **OS:** Proxmox VE 9.2.3 / Debian 13 (kernel 7.0.6)
-- **Storage:** 1 TB Samsung 980 PRO NVMe + 500 GB 870 EVO SATA SSD
+- **Storage:** 1 TB Samsung 980 PRO NVMe (`speedy-nvme-drive` LVM-thin — all
+  k8s VMs incl. master-1's 100 G OS + 150 G Ceph OSD disks; ~67% allocated) +
+  500 GB Samsung 870 EVO SATA SSD (Proxmox OS; its `local-lvm` is ~97% free —
+  ~345 G of spare SSD on this host)
 
 #### `fran` — Gigabyte B450M DS3H · `192.168.40.9`
 Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest per-core CPU → preferred home for CPU-bound workloads.
@@ -46,7 +49,10 @@ Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest pe
 - **CPU:** Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2)
 - **RAM:** 40 GB DDR4-2133 — 16+8+16 GB, 39 GiB usable (4 slots, max 128 GB)
 - **OS:** Proxmox VE 9.1.7 / Debian 13 (kernel 6.17.13)
-- **Storage:** 250 GB 850 EVO SSD + 4 TB Toshiba HDD (LVM-thin) + DVD-RW
+- **Storage:** 250 GB Samsung 850 EVO SATA SSD (s/n `S2R5NX0H437857T`,
+  ~26k h / ~26 TB written, healthy — `local-lvm`, hosts master-2's 50 G disk)
+  + 4 TB Toshiba HDWE140 **internal** SATA HDD (VG `fran-4-tb-external` — the
+  name lies) + DVD-RW
 - ⚠️ Board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
 
 #### `UnraidBackup` — Dell EMC Avamar datastore (Intel S2600GZ board) · `192.168.40.116`
@@ -63,18 +69,27 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
 - **CPU:** 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz
 - **RAM:** ~110 GiB DDR3 usable (likely 128 GB; DIMM layout not enumerated — no root)
 - **OS:** TrueNAS SCALE 25.10.3.1 / Debian 12 (kernel 6.12.33)
-- **Storage:** 5× 5 TB Seagate ST5000LM000 HDD + 2× 238 GB SATA SSD + DVD-RW
+- **Storage:** 5× 5 TB Seagate ST5000LM000 HDD (ZFS `FranPool`, ~23 TB raw)
+  + 2× 256 GB white-label SSDs (Phison-controller, model string just "SATA
+  SSD", behind the SAS HBA): boot-pool (s/n `21120225603051`) and `VM_Pool`
+  (s/n `22082325601847`, fw SBFM61.5, 88% life — hosts master-3's 40 G zvol;
+  reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
 
 ### Kubernetes nodes (VMs)
 
-VMs running **on the physical hosts above** — kubeadm, mixed-arch (5× amd64 + 1× arm64):
+VMs running **on the physical hosts above** — kubeadm, mixed-arch (7× amd64 +
+1× arm64). **HA control plane (2026-07-07):** 3 masters, one per physical
+machine, behind **kube-vip VIP `192.168.40.171`** (the API endpoint for
+kubeconfigs, kubelets, and Cilium):
 
 | Node | Arch | Runs on | Role |
 |---|---|---|---|
-| control-plane | amd64 | `pve` (R720) | Control plane |
+| `k8s-cluster-prod-master` | amd64 | `pve` (R720), VM 135 (`.172`) | Control plane 1/3 + Ceph OSD + mon `c` |
+| `k8s-cp-old-ryzen-node` | amd64 | `fran` (B450M), VM 101 (`.108`, 2 vCPU / 8 GiB / 50 GiB) | Control plane 2/3 |
+| `k8s-cp-truenas-node` | amd64 | `truenas` VM (`.249`, 2 vCPU / 8 GiB / 50 GiB, on `VM_Pool` SSD) | Control plane 3/3 + mon `e` |
 | worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers + Ceph OSDs |
 | `ubuntu24-gpu-box` | amd64 | **Tesla P4** (GPU passthrough) | GPU workloads (Plex, ollama, Frigate, Immich-ML) |
-| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.75`, 8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + doubles as an XFCE desktop |
+| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.76`, 8 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
 | `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
 
 **GPU — Tesla P4:** 8 GB GDDR5, 2,560 CUDA cores (Pascal), 75 W single-slot, NVENC/NVDEC. **Time-sliced** (4 replicas) so Plex + ollama + Frigate + Immich-ML share it; consumers pinned with `nodeSelector: gpu=true`.
@@ -91,7 +106,7 @@ VMs running **on the physical hosts above** — kubeadm, mixed-arch (5× amd64 +
 
 > ⚠️ `/mnt/user` is shfs (FUSE) and hands out unstable NFS handles → pods hit `ESTALE`. Mitigated by setting `FranData` array-only (`shareUseCache=no`) + the `nfs-mount-healer` app. See [`gitops/README.md`](gitops/README.md) for detail.
 
-**Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs (one per Rocky node, on the `pve` NVMe), `size=2`, ~210 GiB usable. **Managed out-of-band** (not in Git) — runbook in [`gitops/README.md`](gitops/README.md).
+**Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs (one per Rocky node, on the `pve` NVMe), `size=2`, ~210 GiB usable. MONs `c`/`d`/`e` pinned via `ceph-mon=true` node labels to **one per physical machine** (R720 / B450M / truenas) — mon quorum survives any single host, but ⚠️ **all OSDs still share the one `pve` NVMe**, so data does not (yet). **Managed out-of-band** (not in Git) — runbook in [`gitops/README.md`](gitops/README.md).
 
 ---
 
