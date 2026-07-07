@@ -174,6 +174,44 @@ Apps are reachable two ways:
    `kubectl apply` the secret out-of-band.
 4. Commit + push. The root `app-of-apps` picks it up and Argo syncs it.
 
+## vClusters (throwaway virtual clusters)
+
+[vCluster](https://www.vcluster.com/) runs a full virtual Kubernetes cluster
+inside one namespace of the host cluster — cheap, isolated, disposable. Good for
+testing operators/CRDs, trying cluster-wide changes, or anything you don't want
+touching the real cluster.
+
+Each vCluster is **one file**: `apps/vcluster-<name>.yaml`, an Argo `Application`
+pointing at the upstream `vcluster` Helm chart (charts.loft.sh, pinned version).
+The [`scripts/vcluster.sh`](scripts/vcluster.sh) helper generates/removes that
+file and commits + pushes it (that *is* the deploy). No `vcluster` CLI needed.
+
+```sh
+gitops/scripts/vcluster.sh create dev     # add file, push, wait, fetch kubeconfig (~1 min)
+gitops/scripts/vcluster.sh kubeconfig dev # (re)write ~/.kube/vcluster-dev.yaml
+gitops/scripts/vcluster.sh list           # name / port / sync / health
+gitops/scripts/vcluster.sh delete dev     # remove file, push, wait for prune, delete ns + PVC
+```
+
+How it hangs together:
+
+- Runs in namespace `vcluster-<name>`; release name `<name>`, so the pod is
+  `<name>-0` and its data is a 5 Gi PVC on `rook-ceph-block`.
+- The API server is exposed on a **pinned NodePort pair** starting at 31800
+  (https = N, kubelet = N+1 — both pinned or the auto-assigned kubelet port
+  keeps the app permanently OutOfSync). Reachable on any node IP; the
+  kubeconfig uses the control-plane (`192.168.40.172`), which is baked into
+  the cert SANs (`controlPlane.proxy.extraSANs`).
+- vCluster maintains the kubeconfig in secret `vc-<name>` in its namespace,
+  with the server URL pre-set via `exportKubeConfig` — `kubeconfig` just
+  extracts it. Works from anywhere on the LAN, no port-forward.
+- `delete` also removes the namespace afterwards — the PVC and the
+  `CreateNamespace=true` namespace aren't Argo-managed, so pruning alone
+  leaves them behind.
+- Workload pods created *inside* the vCluster actually run on the host
+  cluster (synced into `vcluster-<name>`, named `<pod>-x-<ns>-x-<name>`), so
+  they show up in host monitoring and use host storage classes as usual.
+
 ## Manual / out-of-band setup (NOT in GitOps)
 
 ArgoCD itself bootstraps this repo, so its own install is **not** managed here

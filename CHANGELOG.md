@@ -79,6 +79,28 @@ README) — only used to mint tokens; MFA accounts seed tokens via
 iPhone-pedometer push (Health Auto Export): the watch counts 24/7 without the
 phone, and nothing depends on flaky iOS background automations.
 
+## 2026-07-02
+
+### vClusters: one-command virtual clusters via GitOps
+Added [vCluster](https://www.vcluster.com/) support — disposable virtual
+Kubernetes clusters, each living in one namespace of the host cluster. A
+vCluster is a single Argo `Application` file (`gitops/apps/vcluster-<name>.yaml`)
+pointing at the upstream `vcluster` Helm chart (0.35.1, pinned); the new
+[`gitops/scripts/vcluster.sh`](gitops/scripts/vcluster.sh) generates/removes the
+file and commits + pushes it:
+- `create <name>` — push, wait for Argo, write `~/.kube/vcluster-<name>.yaml`.
+- `kubeconfig <name>` — re-extract the kubeconfig from the `vc-<name>` secret.
+- `delete <name>` — push the removal, wait for prune, clean up namespace + PVC.
+- `list` — port / sync / health per vCluster.
+
+API exposed on a pinned NodePort pair from 31800 (https + kubelet — both pinned,
+else the random kubelet port keeps the app forever OutOfSync), reachable at
+`https://192.168.40.172:<port>` from the LAN with no port-forward and no
+`vcluster` CLI. Data on a 5 Gi `rook-ceph-block` PVC. Docs in
+[`gitops/README.md`](gitops/README.md#vclusters-throwaway-virtual-clusters).
+Tested end-to-end: created a `test` vCluster, ran an nginx deployment inside it
+over the exported kubeconfig, deleted it, verified zero leftovers.
+
 ## 2026-06-29
 
 ### Hardware inventory: audited all 4 physical hosts, uniform README table
