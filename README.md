@@ -70,8 +70,9 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
 - **RAM:** ~110 GiB DDR3 usable (likely 128 GB; DIMM layout not enumerated — no root)
 - **OS:** TrueNAS SCALE 25.10.3.1 / Debian 12 (kernel 6.12.33)
 - **Storage:** 5× 5 TB Seagate ST5000LM000 HDD (ZFS `FranPool`, ~23 TB raw)
-  + 2× 256 GB white-label SSDs (Phison-controller, model string just "SATA
-  SSD", behind the SAS HBA): boot-pool (s/n `21120225603051`) and `VM_Pool`
+  + 2× 256 GB SSDs — **likely Inland Professional** (Micro Center purchase;
+  Phison-controller white-label, model string just "SATA SSD"), behind the
+  SAS HBA: boot-pool (s/n `21120225603051`) and `VM_Pool`
   (s/n `22082325601847`, fw SBFM61.5, 88% life — hosts master-3's 40 G zvol;
   reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
 
