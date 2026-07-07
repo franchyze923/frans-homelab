@@ -6,6 +6,19 @@ forward, every change gets an entry here.
 
 ## 2026-07-06
 
+### etcd-backup: nightly etcd snapshots to the NAS
+New `etcd-backup` app: CronJob at 2:15 AM snapshots etcd (via `etcdctl` on a
+control-plane node, hostNetwork + kubeadm healthcheck-client cert) to the
+Unraid NFS share `k8s-pvs/etcd-snapshots`, keeping 14 days. First step of the
+control-plane HA plan — staged two new master VMs the same day:
+`k8s-cp-old-ryzen-node` (192.168.40.108, Ryzen Proxmox) and
+`k8s-cp-truenas-node` (192.168.40.249, TrueNAS `VM_Pool` SSD, freed by
+destroying the legacy "Plex Pool"), both Rocky 9.8, 2 vCPU / 8 GiB / 50 GiB,
+static IPs. Also that day: Pi-hole wildcard DNS
+(`address=/*.franpolignano.com/192.168.40.202` + www exception in
+`misc.dnsmasq_lines`) on both Pi-holes (.49, .167) — no more per-app DNS
+entries.
+
 ### steps-dashboard: Garmin daily-steps dashboard
 New app at `steps.franpolignano.com` showing daily step counts from the Garmin
 watch. Flask/gunicorn (`franchyze923/steps-dashboard`, source in
