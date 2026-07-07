@@ -22,6 +22,12 @@ runbook in `workloads/keycloak/README.md`. Flushed out along the way:
   admin user `fran`) and Keycloak added as auth source.
 - **Open WebUI got a hostname** (`openwebui.franpolignano.com` HTTPRoute) —
   OIDC needs a stable redirect URL; wildcard DNS made it free.
+- **In-cluster DNS couldn't resolve LAN names**: CoreDNS forwarded straight
+  to 1.1.1.1/8.8.8.8, so pods couldn't reach `keycloak.franpolignano.com`
+  (would have broken every OIDC login). Added a `franpolignano.com:53`
+  forward zone → the Pi-holes (.167/.49) in the CoreDNS Corefile — general
+  DNS still goes public, so cluster egress doesn't depend on the Pi-holes.
+  ⚠️ kubeadm upgrades can rewrite the Corefile; re-check after upgrades.
 No native OIDC (skipped): media stack, *arrs, prometheus, heimdall, frigate,
 ELK (paid), ceph dashboard (SAML). Grafana still has `admin/admin` in git as
 break-glass — change it in the UI.
