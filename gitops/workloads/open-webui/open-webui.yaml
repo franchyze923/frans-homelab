@@ -121,6 +121,22 @@ spec:
             # Point the frontend at the in-cluster Ollama service.
             - name: OLLAMA_BASE_URL
               value: "http://ollama:11434"
+            # --- Keycloak SSO (client secret from out-of-band Secret) ---
+            - name: WEBUI_URL
+              value: "https://openwebui.franpolignano.com"
+            - name: OAUTH_PROVIDER_NAME
+              value: "Keycloak"
+            - name: OPENID_PROVIDER_URL
+              value: "https://keycloak.franpolignano.com/realms/homelab/.well-known/openid-configuration"
+            - name: OAUTH_CLIENT_ID
+              value: "open-webui"
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: openwebui-oidc
+                  key: CLIENT_SECRET
+            - name: ENABLE_OAUTH_SIGNUP
+              value: "true"
           volumeMounts:
             - name: data
               mountPath: /app/backend/data
@@ -151,3 +167,21 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+---
+# Gateway hostname (needed as a stable OIDC redirect URL; wildcard DNS
+# already resolves it).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: open-webui
+  namespace: open-webui
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - openwebui.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: open-webui
+          port: 80

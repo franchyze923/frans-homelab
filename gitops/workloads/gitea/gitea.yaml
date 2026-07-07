@@ -3,6 +3,51 @@ kind: Namespace
 metadata:
   name: gitea
 ---
+# Repos + sqlite DB + app.ini. Ceph RBD -- was a hostPath before 2026-07-07,
+# which silently reset Gitea (install state included) every time the pod
+# landed on a different node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+  namespace: gitea
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+# NFS volume for nightly backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gitea-data-backup-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/gitea
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data-backup
+  namespace: gitea
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: gitea-data-backup-pv
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,6 +55,9 @@ metadata:
   namespace: gitea
 spec:
   replicas: 1
+  # Recreate: data PVC is ReadWriteOnce and sqlite wants a single writer.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: gitea
@@ -20,7 +68,8 @@ spec:
     spec:
       containers:
         - name: gitea
-          image: gitea/gitea:latest
+          # Pinned: gitea runs one-way DB migrations; bump deliberately.
+          image: gitea/gitea:1.26.4
           ports:
             - containerPort: 3000
               name: http
@@ -41,9 +90,42 @@ spec:
               cpu: "500m"
       volumes:
         - name: data
-          hostPath:
-            path: /var/lib/gitea
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: gitea-data
+---
+# Nightly backup of /data (repos, sqlite DB, app.ini) to the NAS
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitea-data-backup
+  namespace: gitea
+spec:
+  schedule: "40 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting gitea data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: gitea-data
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: gitea-data-backup
 ---
 apiVersion: v1
 kind: Service

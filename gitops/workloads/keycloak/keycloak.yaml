@@ -52,17 +52,8 @@ spec:
     requests:
       storage: 1Gi
 ---
-# Secret for admin credentials
-apiVersion: v1
-kind: Secret
-metadata:
-  name: keycloak-admin
-  namespace: keycloak
-type: Opaque
-stringData:
-  username: "admin"
-  password: "changeme"
----
+# Admin credentials live in Secret `keycloak-admin-creds`, applied
+# out-of-band (NOT in git) -- template in this dir's README.
 # Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -101,7 +92,8 @@ spec:
             runAsUser: 0
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:latest
+          # Pinned: SSO is now load-bearing; bump deliberately.
+          image: quay.io/keycloak/keycloak:26.6.3
           args:
             - start-dev
           ports:
@@ -110,12 +102,12 @@ spec:
             - name: KEYCLOAK_ADMIN
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-admin
+                  name: keycloak-admin-creds
                   key: username
             - name: KEYCLOAK_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-admin
+                  name: keycloak-admin-creds
                   key: password
             - name: KC_PROXY_HEADERS
               value: "xforwarded"

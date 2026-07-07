@@ -6,6 +6,26 @@ forward, every change gets an entry here.
 
 ## 2026-07-07
 
+### Keycloak SSO: realm + five apps, and a pile of fixes it flushed out
+Stood up real SSO on the existing Keycloak (`keycloak.franpolignano.com`):
+new realm **`homelab`**, user `fran`, OIDC clients for **ArgoCD, Grafana,
+Gitea, Immich, Open WebUI** (each app logs in via Keycloak; fran maps to
+admin in ArgoCD/Grafana). Client secrets in out-of-band Secrets per app;
+runbook in `workloads/keycloak/README.md`. Flushed out along the way:
+- **Keycloak admin password was `changeme`, committed in git** — rotated to a
+  strong password, Secret moved out-of-band (`keycloak-admin-creds`), image
+  pinned `latest`→26.6.3.
+- **Gitea had never been installed** (sat at the setup wizard since deploy)
+  because its data was a **hostPath** — every reschedule to another node
+  reset it. Now: Ceph PVC + `Recreate` + nightly NFS backup CronJob + image
+  pinned `latest`→1.26.4; install completed (`INSTALL_LOCK`, domain/ROOT_URL,
+  admin user `fran`) and Keycloak added as auth source.
+- **Open WebUI got a hostname** (`openwebui.franpolignano.com` HTTPRoute) —
+  OIDC needs a stable redirect URL; wildcard DNS made it free.
+No native OIDC (skipped): media stack, *arrs, prometheus, heimdall, frigate,
+ELK (paid), ceph dashboard (SAML). Grafana still has `admin/admin` in git as
+break-glass — change it in the UI.
+
 ### Ceph OSDs: one per physical drive — any single drive can now die
 Restructured from 3 OSDs all on the `pve` NVMe to 3 OSDs on 3 drives:
 moved master-1's OSD disk to the 870 EVO (live `qm disk move`, Ceph never

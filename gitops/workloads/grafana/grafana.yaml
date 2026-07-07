@@ -389,6 +389,33 @@ spec:
               value: "admin"
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            # --- Keycloak SSO (client secret from out-of-band Secret) ---
+            - name: GF_SERVER_ROOT_URL
+              value: "https://grafana.franpolignano.com"
+            - name: GF_AUTH_GENERIC_OAUTH_ENABLED
+              value: "true"
+            - name: GF_AUTH_GENERIC_OAUTH_NAME
+              value: "Keycloak"
+            - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+              value: "grafana"
+            - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-oidc
+                  key: CLIENT_SECRET
+            - name: GF_AUTH_GENERIC_OAUTH_SCOPES
+              value: "openid profile email"
+            - name: GF_AUTH_GENERIC_OAUTH_AUTH_URL
+              value: "https://keycloak.franpolignano.com/realms/homelab/protocol/openid-connect/auth"
+            - name: GF_AUTH_GENERIC_OAUTH_TOKEN_URL
+              value: "https://keycloak.franpolignano.com/realms/homelab/protocol/openid-connect/token"
+            - name: GF_AUTH_GENERIC_OAUTH_API_URL
+              value: "https://keycloak.franpolignano.com/realms/homelab/protocol/openid-connect/userinfo"
+            - name: GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP
+              value: "true"
+            # fran is Admin, anyone else in the realm is Viewer
+            - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH
+              value: "email=='franpolignano@gmail.com' && 'Admin' || 'Viewer'"
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
