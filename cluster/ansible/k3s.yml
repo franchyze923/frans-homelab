@@ -46,7 +46,9 @@
     - name: Create user fran with sudo access
       ansible.builtin.user:
         name: fran
-        password: "{{ 'REDACTED' | password_hash('sha512') }}"
+        # fran_password comes from group_vars/all/secrets.yml (gitignored) --
+        # never put the literal password here, this file is public.
+        password: "{{ fran_password | password_hash('sha512') }}"
         groups: wheel
         append: true
         shell: /bin/bash

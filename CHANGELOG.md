@@ -6,6 +6,13 @@ forward, every change gets an entry here.
 
 ## 2026-07-06
 
+
+
+
+
+
+
+
 ### etcd-backup: nightly etcd snapshots to the NAS
 New `etcd-backup` app: CronJob at 2:15 AM snapshots etcd (via `etcdctl` on a
 control-plane node, hostNetwork + kubeadm healthcheck-client cert) to the
