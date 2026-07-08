@@ -74,9 +74,8 @@ pinned to that label, `allowMultiplePerNode: false`, then failed over mon-a→d
 API stayed up, etcd served 2/3, Ceph went degraded-but-serving (OSDs are
 still all on R720 — next project), steps/networth apps answered fine. Powered
 back on, everything rejoined, HEALTH_OK. ubuntu24-gpu-box's kubelet was
-re-pointed later the same day (verified connecting only to the VIP); the one
-remaining straggler is the offline mac-m1-worker — when it returns, fix with
-`sed -i "s|40.172:6443|40.171:6443|" /etc/kubernetes/kubelet.conf && systemctl restart kubelet`.
+re-pointed later the same day, and mac-m1-worker on 2026-07-08 when it came
+back online — **every node now talks to the VIP**; conversion fully complete.
 `vcluster.sh` updated to use the VIP.
 
 ## 2026-07-06
