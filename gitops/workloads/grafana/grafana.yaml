@@ -1336,7 +1336,7 @@ data:
       "timepicker": {},
       "timezone": "",
       "title": "Node Metrics",
-      "uid": "k8s-cluster",
+      "uid": "node-metrics",
       "version": 1,
       "weekStart": ""
     }
