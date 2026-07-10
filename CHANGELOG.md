@@ -4,6 +4,29 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-10
+
+### Backup CronJobs were silently down — etcd 3.5 days, Gitea 36 h
+Routine pod sweep found three casualties of one NFS event on the Unraid NAS
+around the 2026-07-07 HA work, none of which alarmed:
+- **etcd snapshots**: the 07-07 job's pod hung forever in `PodInitializing`
+  on `k8s-cp-truenas-node` (dead NFS mount), and `concurrencyPolicy: Forbid`
+  let that one stuck pod block every run since. Deleted the job, manual run
+  succeeded (64 M to NAS), verified the truenas node mounts the share again.
+- **Gitea backup**: the 07-07 hostPath→RBD migration made `gitea-data` RWO,
+  so backup pods on any other node die with Multi-Attach — broken since
+  07-08. Fixed with required podAffinity on `app=gitea` (same pattern
+  heimdall already had); test job co-located and completed.
+- **Heimdall**: pod looked Ready but held a stale handle on its
+  `restore-config` init volume (kubelet retried ~2 min for 3.5 days) — it
+  would **not** have survived a restart. Recreated the pod → fresh mount.
+
+Lesson: `Forbid` + a wedged NFS mount = silent backup outage, and
+`nfs-mount-healer` only watches the media namespaces. After any NAS event,
+sweep non-Running pods and `lastSuccessfulTime` on the backup CronJobs.
+Remedy is always **pod deletion** (fresh mount); container restarts don't
+remount. Would-be follow-up: alert on backup CronJob staleness.
+
 ## 2026-07-07
 
 ### Keycloak SSO: realm + five apps, and a pile of fixes it flushed out

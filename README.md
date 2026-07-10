@@ -106,6 +106,7 @@ kubeconfigs, kubelets, and Cilium):
 | `/mnt/user` | shfs (FUSE) | 22 TB | Merged view, NFS-exported as `/mnt/user/FranData` |
 
 > ⚠️ `/mnt/user` is shfs (FUSE) and hands out unstable NFS handles → pods hit `ESTALE`. Mitigated by setting `FranData` array-only (`shareUseCache=no`) + the `nfs-mount-healer` app. See [`gitops/README.md`](gitops/README.md) for detail.
+> The healer only covers the media namespaces — **backup CronJobs are not covered**, and with `concurrencyPolicy: Forbid` a single pod wedged on a dead mount silently blocks all future backups (bit etcd for 3.5 days, 2026-07-10). After a NAS event, sweep non-Running pods and each backup CronJob's `lastSuccessfulTime`; the fix is deleting the pod/job (container restarts don't remount).
 
 **Rook-Ceph** — block storage (`rook-ceph-block` / RBD): 3 OSDs, **one per
 physical drive** (2026-07-07): `osd.3` 150 G on the `pve` 980 PRO NVMe
