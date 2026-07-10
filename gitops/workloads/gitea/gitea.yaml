@@ -109,6 +109,15 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          # gitea-data is RWO Ceph RBD since 2026-07-07: it can only attach to
+          # one node, so the backup pod must land where gitea is running.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: gitea
+                  topologyKey: kubernetes.io/hostname
           containers:
             - name: backup
               image: debian:stable-slim
