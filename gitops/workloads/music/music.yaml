@@ -99,6 +99,7 @@ data:
   playlists.txt: |
     # Add public Spotify playlist/album URLs below, one per line, e.g.:
     # https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+    https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ?si=10eb33dd12e94dd1
 ---
 apiVersion: apps/v1
 kind: Deployment
