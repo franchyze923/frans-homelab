@@ -215,13 +215,13 @@ spec:
           restartPolicy: Never
           containers:
             - name: spotdl
-              image: spotdl/spotify-downloader:v4.5.0
+              # custom image: official one is musl-based and crashes in
+              # tls_client — see Dockerfile in this directory
+              image: franchyze923/spotdl:4.5.0
               command:
                 - sh
                 - -c
                 - |
-                  # spotdl lives in the image's venv, not on the default PATH
-                  export PATH="/app/.venv/bin:$PATH"
                   set -u
                   mkdir -p /music/.spotdl /music/playlists
                   rc=0
