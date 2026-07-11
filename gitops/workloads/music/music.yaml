@@ -105,19 +105,19 @@ data:
     # https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ  <- fails (Spotify-owned)
     https://open.spotify.com/playlist/0XD7SpoX9Oa7DbVXBVHcQV?si=6ba0f7aef944462f
   # After each sync, mirror the m3u8 playlists into Plex ("Fran's Music"
-  # includes /media/Music/spotdl). Paths are rewritten because Plex sees
-  # the library at /media/Music/spotdl, the job at /music. Needs Secret
-  # plex-token (key `token`, out-of-band); skips quietly if absent.
+  # includes /media/Music/spotdl; the job sees the same files at /music).
+  # Tracks are resolved to library ratingKeys and the playlist is built via
+  # the playlists API — /playlists/upload returns 200 but silently creates
+  # nothing on PMS 1.43. Needs Secret plex-token (key `token`, out-of-band);
+  # skips quietly if absent.
   plex_import.py: |
-    import glob, os, re, sys, time, urllib.parse, urllib.request
+    import glob, os, sys, time, urllib.parse, urllib.request
     import xml.etree.ElementTree as ET
 
     PLEX = os.environ.get("PLEX_URL", "http://plex.plex.svc.cluster.local:32400")
     TOKEN = os.environ.get("PLEX_TOKEN", "")
     SECTION = os.environ.get("PLEX_SECTION", "5")
-    SRC = "/music/playlists"
-    DST_JOB = "/music/playlists/.plex"      # this job's view of the copies
-    DST_PLEX = "/media/Music/spotdl/playlists/.plex"  # Plex's view of the same dir
+    JOB_PREFIX, PLEX_PREFIX = "/music/", "/media/Music/spotdl/"
 
     if not TOKEN:
         print("PLEX_TOKEN not set; skipping Plex playlist import")
@@ -129,7 +129,7 @@ data:
         with urllib.request.urlopen(req, timeout=60) as r:
             return r.read()
 
-    lists = glob.glob(SRC + "/*.m3u8")
+    lists = glob.glob("/music/playlists/*.m3u8")
     if not lists:
         print("no m3u8 playlists found; nothing to import")
         sys.exit(0)
@@ -143,22 +143,46 @@ data:
         if d is None or d.get("refreshing") != "1":
             break
 
-    os.makedirs(DST_JOB, exist_ok=True)
+    machine = ET.fromstring(api("/identity")).get("machineIdentifier")
+    tracks = {}  # file path (Plex's view) -> ratingKey
+    for t in ET.fromstring(api("/library/sections/%s/all?type=10" % SECTION)).iter("Track"):
+        for part in t.iter("Part"):
+            tracks[part.get("file")] = t.get("ratingKey")
+
+    def uri(ids):
+        return urllib.parse.quote(
+            "server://%s/com.plexapp.plugins.library/library/metadata/%s"
+            % (machine, ",".join(ids)), safe="")
+
     rc = 0
     existing = ET.fromstring(api("/playlists"))
     for src in lists:
-        base = os.path.basename(src)
-        name = os.path.splitext(base)[0]
-        with open(src) as f, open(os.path.join(DST_JOB, base), "w") as out:
-            for line in f:
-                out.write(re.sub(r"^/music/", "/media/Music/spotdl/", line))
-        for p in existing.iter("Playlist"):
-            if p.get("title") == name:
-                api("/playlists/" + p.get("ratingKey"), method="DELETE")
+        name = os.path.splitext(os.path.basename(src))[0]
+        wanted, missing = [], 0
+        for line in open(src):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            rk = tracks.get(PLEX_PREFIX + line[len(JOB_PREFIX):] if line.startswith(JOB_PREFIX) else line)
+            if rk:
+                wanted.append(rk)
+            else:
+                missing += 1
+        if not wanted:
+            print("no matchable tracks for '%s'; skipping" % name)
+            continue
         try:
-            api("/playlists/upload?sectionID=%s&path=%s"
-                % (SECTION, urllib.parse.quote(DST_PLEX + "/" + base)), method="POST")
-            print("imported playlist '%s' into Plex" % name)
+            for p in existing.iter("Playlist"):
+                if p.get("title") == name:
+                    api("/playlists/" + p.get("ratingKey"), method="DELETE")
+            first, rest = wanted[:200], wanted[200:]
+            resp = ET.fromstring(api("/playlists?type=audio&smart=0&title=%s&uri=%s"
+                                     % (urllib.parse.quote(name), uri(first)), method="POST"))
+            key = next(p.get("ratingKey") for p in resp.iter("Playlist"))
+            while rest:
+                chunk, rest = rest[:200], rest[200:]
+                api("/playlists/%s/items?uri=%s" % (key, uri(chunk)), method="PUT")
+            print("plex playlist '%s': %d tracks (%d unmatched)" % (name, len(wanted), missing))
         except Exception as e:
             print("PLEX IMPORT FAILED for %s: %s" % (name, e))
             rc = 1
