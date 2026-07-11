@@ -294,7 +294,7 @@ spec:
                     spotdl sync "$url" \
                       --save-file "/music/.spotdl/$id.spotdl" \
                       --output "/music/{artist}/{album}/{title}.{output-ext}" \
-                      --m3u "/music/playlists/{list-name}.m3u8" || { echo "SYNC FAILED: $url"; rc=1; }
+                      --m3u "/music/playlists/{list}.m3u8" || { echo "SYNC FAILED: $url"; rc=1; }
                   done
                   echo "spotdl sync finished at $(date)"
                   python3 /config/plex_import.py || rc=1
