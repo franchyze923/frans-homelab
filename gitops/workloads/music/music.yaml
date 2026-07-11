@@ -103,6 +103,7 @@ data:
     # and WILL fail. Workaround: copy their tracks into a playlist you own,
     # make it public, and list that URL instead. See README.
     # https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ  <- fails (Spotify-owned)
+    https://open.spotify.com/playlist/0XD7SpoX9Oa7DbVXBVHcQV?si=6ba0f7aef944462f
 ---
 apiVersion: apps/v1
 kind: Deployment
