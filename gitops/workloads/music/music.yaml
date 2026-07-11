@@ -220,10 +220,12 @@ spec:
                 - sh
                 - -c
                 - |
+                  # spotdl lives in the image's venv, not on the default PATH
+                  export PATH="/app/.venv/bin:$PATH"
                   set -u
                   mkdir -p /music/.spotdl /music/playlists
                   rc=0
-                  grep -Ev '^\s*(#|$)' /config/playlists.txt | while read -r url; do
+                  for url in $(grep -Ev '^\s*(#|$)' /config/playlists.txt); do
                     id=$(printf '%s' "$url" | md5sum | cut -c1-12)
                     echo "=== syncing $url"
                     spotdl sync "$url" \
