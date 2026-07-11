@@ -4,7 +4,31 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-11
+
+### New: music stack — spotDL + Navidrome (`gitops/workloads/music`)
+Nightly `spotdl-sync` CronJob (03:30) mirrors public Spotify playlists
+(listed in the `spotdl-playlists` ConfigMap) into NFS
+`FranData/FranMedia/music` — metadata from the Spotify API, audio from
+YouTube Music. **Navidrome 0.63.1** at `navidrome.franpolignano.com` serves
+the library (Subsonic API, so phone apps work). Standard patterns: RBD for
+Navidrome's SQLite + nightly tar backup with co-location affinity and
+restore initContainer; music library itself not backed up (re-downloadable).
+`activeDeadlineSeconds` on the sync job so a wedged NFS mount can't wedge
+`Forbid` forever. Local admin on first visit — no OIDC in Navidrome.
+
 ## 2026-07-10
+
+### ArgoCD Keycloak client: mobile-app redirect URI + switched to public
+Logging into ArgoCD from the phone app failed twice: Keycloak rejected the
+app's `argocd://auth/callback` deep-link redirect (not on the client's
+allowlist), then the code-for-token exchange failed because the client was
+confidential and the app can't hold a secret. Fixed out-of-band in Keycloak
+(admin API): added the redirect URI and made the `argocd` client **public**
+per RFC 8252 (native apps can't keep secrets). Web UI unaffected — it still
+posts the secret and Keycloak ignores it. Trade-off: the `fran` password is
+now the only gate on the OIDC flow. Runbook updated in
+`workloads/keycloak/README.md`.
 
 ### Backup CronJobs were silently down — etcd 3.5 days, Gitea 36 h
 Routine pod sweep found three casualties of one NFS event on the Unraid NAS

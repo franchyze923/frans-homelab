@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: music
+---
+# Shared music library on Unraid NFS — spotdl writes, navidrome reads.
+# Everything here is re-downloadable, so no backup CronJob for this volume.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: music-library-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia/music
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: music-library
+  namespace: music
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: music-library-pv
+  resources:
+    requests:
+      storage: 1Ti
+---
+# Navidrome state (SQLite DB, cache) on Ceph RBD for reliability
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-data
+  namespace: music
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for navidrome data backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: navidrome-data-backup-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/navidrome
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-data-backup
+  namespace: music
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: navidrome-data-backup-pv
+  resources:
+    requests:
+      storage: 2Gi
+---
+# Spotify playlists to mirror — one public playlist/album/artist URL per line.
+# spotdl fetches metadata from the Spotify API and audio from YouTube Music.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spotdl-playlists
+  namespace: music
+data:
+  playlists.txt: |
+    # Add public Spotify playlist/album URLs below, one per line, e.g.:
+    # https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navidrome
+  namespace: music
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: navidrome
+  template:
+    metadata:
+      labels:
+        app: navidrome
+    spec:
+      initContainers:
+        - name: restore-data
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /data-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /data-backup/backup.tar.gz -C /data; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
+      containers:
+        - name: navidrome
+          image: deluan/navidrome:0.63.1
+          ports:
+            - containerPort: 4533
+          env:
+            - name: ND_MUSICFOLDER
+              value: /music
+            - name: ND_DATAFOLDER
+              value: /data
+            - name: ND_SCANSCHEDULE
+              value: 1h
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: music
+              mountPath: /music
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: navidrome-data
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: navidrome-data-backup
+        - name: music
+          persistentVolumeClaim:
+            claimName: music-library
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: navidrome
+  namespace: music
+spec:
+  type: ClusterIP
+  selector:
+    app: navidrome
+  ports:
+    - port: 4533
+      targetPort: 4533
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: navidrome
+  namespace: music
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - navidrome.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: navidrome
+          port: 4533
+---
+# Nightly spotdl sync of the playlists in the ConfigMap. Layout is
+# /music/{artist}/{album}/, plus an .m3u8 per playlist in /music/playlists
+# (navidrome imports those automatically). Sync state in /music/.spotdl.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: spotdl-sync
+  namespace: music
+spec:
+  schedule: "30 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # a wedged NFS mount + Forbid must not silently block future runs
+      activeDeadlineSeconds: 21600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: spotdl
+              image: spotdl/spotify-downloader:v4.5.0
+              command:
+                - sh
+                - -c
+                - |
+                  set -u
+                  mkdir -p /music/.spotdl /music/playlists
+                  rc=0
+                  grep -Ev '^\s*(#|$)' /config/playlists.txt | while read -r url; do
+                    id=$(printf '%s' "$url" | md5sum | cut -c1-12)
+                    echo "=== syncing $url"
+                    spotdl sync "$url" \
+                      --save-file "/music/.spotdl/$id.spotdl" \
+                      --output "/music/{artist}/{album}/{title}.{output-ext}" \
+                      --m3u "/music/playlists/{list-name}.m3u8" || { echo "SYNC FAILED: $url"; rc=1; }
+                  done
+                  echo "spotdl sync finished at $(date)"
+                  exit $rc
+              volumeMounts:
+                - name: music
+                  mountPath: /music
+                - name: playlists
+                  mountPath: /config
+                  readOnly: true
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "200m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+          volumes:
+            - name: music
+              persistentVolumeClaim:
+                claimName: music-library
+            - name: playlists
+              configMap:
+                name: spotdl-playlists
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: navidrome-data-backup
+  namespace: music
+spec:
+  schedule: "45 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          # navidrome-data is RWO RBD — backup must co-locate with navidrome
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: navidrome
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting navidrome data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: navidrome-data
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: navidrome-data-backup

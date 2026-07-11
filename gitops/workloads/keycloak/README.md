@@ -36,10 +36,13 @@ in each consumer's out-of-band Secret:
 | `open-webui` | env in `workloads/open-webui/open-webui.yaml` | `openwebui-oidc` in ns `open-webui` |
 
 On a Keycloak rebuild: recreate realm `homelab`, user `fran`, and the five
-clients (redirect URIs are `https://<app hostname>/<provider callback>`), then
+clients (redirect URIs are `https://<app hostname>/<provider callback>`; the
+`argocd` client additionally allows `http://localhost:8085/auth/callback` for
+the CLI and `argocd://auth/callback` for the mobile app, and is a **public**
+client — no client secret required, so the mobile app can log in), then
 refresh each consumer's secret. Or restore the nightly backup, which includes
 the Keycloak DB.
 
 No SSO (no native OIDC): plex, jellyfin*, radarr/sonarr/sabnzbd, tautulli,
 metube, heimdall, prometheus, frigate, ELK (paid feature), ceph dashboard
-(SAML only). *jellyfin has a community SSO plugin if ever wanted.
+(SAML only), navidrome (reverse-proxy header auth only). *jellyfin has a community SSO plugin if ever wanted.
