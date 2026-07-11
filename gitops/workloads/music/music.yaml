@@ -23,7 +23,7 @@ spec:
     - retrans=5
   nfs:
     server: 192.168.40.116
-    path: /mnt/user/FranData/FranMedia/music
+    path: /mnt/user/FranData/FranMedia/Music/spotdl
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -105,9 +105,9 @@ data:
     # https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ  <- fails (Spotify-owned)
     https://open.spotify.com/playlist/0XD7SpoX9Oa7DbVXBVHcQV?si=6ba0f7aef944462f
   # After each sync, mirror the m3u8 playlists into Plex ("Fran's Music"
-  # already includes /media/music). Paths are rewritten because Plex sees
-  # the library at /media/music, the job at /music. Needs Secret plex-token
-  # (key `token`, out-of-band); skips quietly if absent.
+  # includes /media/Music/spotdl). Paths are rewritten because Plex sees
+  # the library at /media/Music/spotdl, the job at /music. Needs Secret
+  # plex-token (key `token`, out-of-band); skips quietly if absent.
   plex_import.py: |
     import glob, os, re, sys, time, urllib.parse, urllib.request
     import xml.etree.ElementTree as ET
@@ -117,7 +117,7 @@ data:
     SECTION = os.environ.get("PLEX_SECTION", "5")
     SRC = "/music/playlists"
     DST_JOB = "/music/playlists/.plex"      # this job's view of the copies
-    DST_PLEX = "/media/music/playlists/.plex"  # Plex's view of the same dir
+    DST_PLEX = "/media/Music/spotdl/playlists/.plex"  # Plex's view of the same dir
 
     if not TOKEN:
         print("PLEX_TOKEN not set; skipping Plex playlist import")
@@ -151,7 +151,7 @@ data:
         name = os.path.splitext(base)[0]
         with open(src) as f, open(os.path.join(DST_JOB, base), "w") as out:
             for line in f:
-                out.write(re.sub(r"^/music/", "/media/music/", line))
+                out.write(re.sub(r"^/music/", "/media/Music/spotdl/", line))
         for p in existing.iter("Playlist"):
             if p.get("title") == name:
                 api("/playlists/" + p.get("ratingKey"), method="DELETE")
