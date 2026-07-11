@@ -9,7 +9,15 @@ like Symfonium / play:Sub work against it.
 ## Adding playlists
 
 Edit the `spotdl-playlists` ConfigMap in `music.yaml` — one public Spotify
-playlist/album/artist URL per line — and push. Next nightly run (03:30) picks
+playlist/album/artist URL per line — and push.
+
+**Spotify-generated playlists don't work.** Anything with an ID starting
+`37i9dQZF` (Daily Mix, On Repeat, Discover Weekly, editorial lists) has been
+blocked for third-party API access by Spotify since Nov 2024; spotdl dies
+with `KeyError: 'ownerV2'`. Workaround: in the Spotify app, select-all the
+playlist's tracks → Add to playlist → New playlist, make it **public**, and
+use that URL. (Personal mixes change weekly, so re-copy when you want the
+new tracks.) Next nightly run (03:30) picks
 it up; to sync immediately:
 
 ```

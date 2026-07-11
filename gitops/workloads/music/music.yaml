@@ -97,9 +97,12 @@ metadata:
   namespace: music
 data:
   playlists.txt: |
-    # Add public Spotify playlist/album URLs below, one per line, e.g.:
-    # https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
-    https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ?si=10eb33dd12e94dd1
+    # Add public Spotify playlist/album URLs below, one per line.
+    # NOTE: Spotify-generated playlists (IDs starting 37i9dQZF — Daily Mix,
+    # On Repeat, editorial) are blocked for third-party apps since late 2024
+    # and WILL fail. Workaround: copy their tracks into a playlist you own,
+    # make it public, and list that URL instead. See README.
+    # https://open.spotify.com/playlist/37i9dQZF1F5p3rmiWPIYgZ  <- fails (Spotify-owned)
 ---
 apiVersion: apps/v1
 kind: Deployment
