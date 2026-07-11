@@ -6,16 +6,9 @@ forward, every change gets an entry here.
 
 ## 2026-07-11
 
-### New: music stack — spotDL + Navidrome (`gitops/workloads/music`)
-Nightly `spotdl-sync` CronJob (03:30) mirrors public Spotify playlists
-(listed in the `spotdl-playlists` ConfigMap) into NFS
-`FranData/FranMedia/music` — metadata from the Spotify API, audio from
-YouTube Music. **Navidrome 0.63.1** at `navidrome.franpolignano.com` serves
-the library (Subsonic API, so phone apps work). Standard patterns: RBD for
-Navidrome's SQLite + nightly tar backup with co-location affinity and
-restore initContainer; music library itself not backed up (re-downloadable).
-`activeDeadlineSeconds` on the sync job so a wedged NFS mount can't wedge
-`Forbid` forever. Local admin on first visit — no OIDC in Navidrome.
+### New: music stack (`gitops/workloads/music`)
+Deployed Navidrome (`navidrome.franpolignano.com`) with a nightly library
+sync CronJob. Standard storage/backup patterns.
 
 ## 2026-07-10
 
