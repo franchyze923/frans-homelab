@@ -115,7 +115,7 @@ data:
               - weight_area
         zones:
           weight_area:
-            coordinates: 0.28,0.68,0.44,0.52,0.62,0.52,0.74,0.60,0.74,1,0.28,1
+            coordinates: 0.407,0.7,0.422,0.323,0.694,0.334,0.746,0.569,0.743,1,0.429,1
             loitering_time: 30
             objects:
               - person
