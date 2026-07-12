@@ -74,19 +74,55 @@ data:
             days: 1
           motion:
             days: 0
+      # Basement cam: workout detection. A person whose feet stay inside the
+      # weight_area zone (rack/bench/mat footprint) for loitering_time seconds
+      # becomes an alert, and only alert footage is retained. Zone coordinates
+      # are normalized 0-1 (x,y pairs), eyeballed from a snapshot -- refine in
+      # the UI zone editor and copy back here (UI edits don't persist).
       reolink_2:
         ffmpeg:
           inputs:
+            - path: rtsp://127.0.0.1:8554/reolink_2
+              input_args: preset-rtsp-restream
+              roles:
+                - record
             - path: rtsp://127.0.0.1:8554/reolink_2_sub
               input_args: preset-rtsp-restream
               roles:
                 - detect
         detect:
-          enabled: false
+          enabled: true
+          fps: 5
         record:
-          enabled: false
+          enabled: true
+          continuous:
+            days: 0
+          motion:
+            days: 0
+          alerts:
+            # loitering_time delays the alert, so pre_capture reaches back to
+            # cover the start of the session
+            pre_capture: 35
+            post_capture: 20
+            retain:
+              days: 14
+          detections:
+            retain:
+              days: 0
+        review:
+          alerts:
+            required_zones:
+              - weight_area
+        zones:
+          weight_area:
+            coordinates: 0.28,0.68,0.44,0.52,0.62,0.52,0.74,0.60,0.74,1,0.28,1
+            loitering_time: 30
+            objects:
+              - person
         snapshots:
-          enabled: false
+          enabled: true
+          required_zones:
+            - weight_area
 
     detect:
       enabled: true
