@@ -4,6 +4,17 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-12
+
+### New: Lidarr (`gitops/workloads/lidarr`)
+Deployed Lidarr (`lidarr.franpolignano.com`) on the radarr/sonarr pattern
+(RBD config + nightly tar backup at 01:15, SABnzbd `Completed_dls` as
+`/downloads`). Manages the pre-existing album library at
+`FranMedia/Music/Full Albums` (NFS path contains a literal space — verified
+kubelet mounts it fine). The same library is also mounted read-only into
+Navidrome at `/music-full-albums`; register it there as a second library in
+the admin UI (supported since Navidrome 0.55).
+
 ## 2026-07-11
 
 ### New: music stack (`gitops/workloads/music`)
