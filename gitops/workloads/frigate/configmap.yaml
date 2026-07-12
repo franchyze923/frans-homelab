@@ -65,8 +65,8 @@ data:
               roles:
                 - detect
         detect:
-          width: 416
-          height: 416
+          # resolution auto-detected from the sub stream (640x480) -- was
+          # pinned to 416x416, which starved face recognition of pixels
           fps: 5
         record:
           enabled: true
@@ -143,7 +143,8 @@ data:
 
     face_recognition:
       enabled: true
-      model_size: small
+      # large = GPU embedding model, meaningfully better than small (CPU)
+      model_size: large
       detection_threshold: 0.75
       min_area: 500
 
