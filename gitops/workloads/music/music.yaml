@@ -39,6 +39,43 @@ spec:
     requests:
       storage: 1Ti
 ---
+# Pre-existing ripped album library (managed by lidarr, ns lidarr).
+# Read-only here; add it in the Navidrome admin UI as a second library
+# pointing at /music-full-albums. NOTE: the NFS path has a literal space.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: full-albums-library-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: "/mnt/user/FranData/FranMedia/Music/Full Albums"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: full-albums-library
+  namespace: music
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: full-albums-library-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
 # Navidrome state (SQLite DB, cache) on Ceph RBD for reliability
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -235,6 +272,9 @@ spec:
             - name: music
               mountPath: /music
               readOnly: true
+            - name: full-albums
+              mountPath: /music-full-albums
+              readOnly: true
           resources:
             requests:
               memory: "128Mi"
@@ -252,6 +292,9 @@ spec:
         - name: music
           persistentVolumeClaim:
             claimName: music-library
+        - name: full-albums
+          persistentVolumeClaim:
+            claimName: full-albums-library
 ---
 apiVersion: v1
 kind: Service

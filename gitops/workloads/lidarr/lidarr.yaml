@@ -1,0 +1,263 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lidarr
+---
+# Config on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-config
+  namespace: lidarr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for config backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lidarr-config-backup-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/lidarr
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-config-backup
+  namespace: lidarr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: lidarr-config-backup-pv
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Existing album library (note: path has a literal space)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lidarr-music-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: "/mnt/user/FranData/FranMedia/Music/Full Albums"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-music
+  namespace: lidarr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: lidarr-music-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lidarr-downloads-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia/Completed_dls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-downloads
+  namespace: lidarr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: lidarr-downloads-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidarr
+  namespace: lidarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lidarr
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: lidarr
+    spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /config -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /config-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /config-backup/backup.tar.gz -C /config; elif [ -n "$(ls -A /config-backup/ 2>/dev/null)" ]; then echo "Restoring from legacy backup..."; cp -r /config-backup/. /config/; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-backup
+              mountPath: /config-backup
+              readOnly: true
+      containers:
+        - name: lidarr
+          image: lscr.io/linuxserver/lidarr:latest
+          ports:
+            - containerPort: 8686
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: music
+              mountPath: /music
+            - name: downloads
+              mountPath: /downloads
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: lidarr-config
+        - name: config-backup
+          persistentVolumeClaim:
+            claimName: lidarr-config-backup
+        - name: music
+          persistentVolumeClaim:
+            claimName: lidarr-music
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: lidarr-downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidarr
+  namespace: lidarr
+  annotations:
+    # Share the platform LoadBalancer IP (192.168.40.201) -- reachable at
+    # 192.168.40.201:8686. Still ClusterIP-backed for the gateway HTTPRoute.
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
+spec:
+  type: LoadBalancer
+  selector:
+    app: lidarr
+  ports:
+    - port: 8686
+      targetPort: 8686
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: lidarr
+  namespace: lidarr
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - lidarr.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: lidarr
+          port: 8686
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lidarr-config-backup
+  namespace: lidarr
+spec:
+  schedule: "15 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: lidarr
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting lidarr config backup..."; tar czf /config-backup/backup.tar.gz -C /config . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"; echo "--> backed up to: $(grep backup /proc/mounts | head -1 | sed "s/ .*//")/backup.tar.gz"']
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: config-backup
+                  mountPath: /config-backup
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: lidarr-config
+            - name: config-backup
+              persistentVolumeClaim:
+                claimName: lidarr-config-backup
