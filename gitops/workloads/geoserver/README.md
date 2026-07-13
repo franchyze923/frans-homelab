@@ -99,11 +99,37 @@ Getting the GPX files out of Strava:
   `gpsbabel -i garmin_fit -f x.fit -o gpx -F x.gpx` or load FIT directly
   (GDAL has no FIT driver, so convert first).
 - **Per-activity**: activity page → ⋯ → "Export GPX" (always GPX).
-- **API**: needs an OAuth app (strava.com/settings/api) — worth it later
-  for an automated sync CronJob, overkill for a first load.
+- **API**: automated via the `strava-sync` CronJob below.
+
+## Daily API sync (`strava-sync.yaml`)
+
+CronJob `strava-sync` (05:00) pulls new activities from the Strava API into
+table `strava_activities`, published as layer `strava:strava_activities`
+(full-res GPS from the streams API; trainer/manual rides get the summary
+polyline or a NULL geom). Pipeline: psql reads state → stdlib-only python
+(no pip) fetches + writes SQL → psql applies. No custom image.
+
+One-time setup:
+
+1. Create an API app at https://www.strava.com/settings/api
+   (Authorization Callback Domain: `localhost`).
+2. `./strava-auth.sh` — does the OAuth dance and creates Secret `strava-api`
+   (client id/secret + first refresh token; also writes
+   `cluster/strava-credentials.txt`, gitignored). Until this is done the
+   daily job fails fast — `activeDeadlineSeconds` keeps a stuck pod from
+   blocking later runs.
+3. First sync / backfill: runs are capped at 100 activities (env
+   `MAX_ACTIVITIES_PER_RUN`) to respect Strava rate limits (100 req/15min,
+   1000/day), resuming where they left off. Backfill faster by re-running:
+   `kubectl -n geoserver create job --from=cronjob/strava-sync strava-sync-2`
+
+**Token rotation:** Strava rotates refresh tokens on every refresh (same
+trap as Withings). The live token lives in the `strava_auth` table — NOT in
+the Secret, which only seeds the first run — so it's inside the nightly
+`pg_dump` and survives rebuilds. Never run two sync jobs concurrently
+(`concurrencyPolicy: Forbid` enforces this).
 
 ## Suite roadmap
 
-- Strava API sync CronJob (auto-pull new activities instead of manual GPX)
 - NFS read-only mount for raster/shapefile source data from Unraid
-- Style the tracks layer (SLD) + a small web map frontend
+- Style the activities layer (SLD) + a small web map frontend

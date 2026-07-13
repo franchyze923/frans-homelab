@@ -29,6 +29,7 @@ argocd-credentials.txt
 keycloak-credentials.txt
 geoserver-credentials.txt
 postgis-credentials.txt
+strava-credentials.txt
 
 # Deployment artifact backups
 deployments/
