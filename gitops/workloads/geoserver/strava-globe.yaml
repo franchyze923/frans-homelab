@@ -174,7 +174,7 @@ data:
       const viewer = new Cesium.Viewer('globe', {
         baseLayerPicker:true,
         imageryProviderViewModels: basemaps,
-        selectedImageryProviderViewModel: basemaps[0],
+        selectedImageryProviderViewModel: basemaps[3],
         terrainProviderViewModels: [],
         geocoder:false, animation:false, timeline:false,
         homeButton:false, navigationHelpButton:false, fullscreenButton:false,
@@ -324,7 +324,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "11"
+        checksum/config: "12"
     spec:
       containers:
         - name: nginx
