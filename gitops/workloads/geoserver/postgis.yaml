@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: postgis
-          image: postgis/postgis:17-3.6
+          image: postgis/postgis:17-3.5
           env:
             # Subdir keeps initdb happy: the RBD mount root contains lost+found
             - name: PGDATA
@@ -116,7 +116,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: backup
-              image: postgis/postgis:17-3.6
+              image: postgis/postgis:17-3.5
               env:
                 - name: PGPASSWORD
                   valueFrom:
