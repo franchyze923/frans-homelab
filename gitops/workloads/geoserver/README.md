@@ -103,7 +103,7 @@ Getting the GPX files out of Strava:
 
 ## Daily API sync (`strava-sync.yaml`)
 
-CronJob `strava-sync` (05:00) pulls new activities from the Strava API into
+CronJob `strava-sync` (16:00 America/New_York) pulls new activities from the Strava API into
 table `strava_activities`, published as layer `strava:strava_activities`
 (full-res GPS from the streams API; trainer/manual rides get the summary
 polyline or a NULL geom). Pipeline: psql reads state → stdlib-only python

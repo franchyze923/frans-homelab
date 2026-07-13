@@ -129,8 +129,8 @@ metadata:
   name: strava-sync
   namespace: geoserver
 spec:
-  # 05:00, after the 03:00/03:30 backups
-  schedule: "0 5 * * *"
+  schedule: "0 16 * * *"
+  timeZone: America/New_York
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
