@@ -116,7 +116,7 @@ data:
         zones:
           weight_area:
             coordinates: 0.407,0.7,0.422,0.323,0.694,0.334,0.746,0.569,0.743,1,0.429,1
-            loitering_time: 30
+            loitering_time: 10
             objects:
               - person
         snapshots:
