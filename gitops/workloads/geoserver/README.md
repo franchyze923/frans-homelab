@@ -103,11 +103,21 @@ Getting the GPX files out of Strava:
 
 ## Daily API sync (`strava-sync.yaml`)
 
-CronJob `strava-sync` (16:00 America/New_York) pulls new activities from the Strava API into
-table `strava_activities`, published as layer `strava:strava_activities`
-(full-res GPS from the streams API; trainer/manual rides get the summary
-polyline or a NULL geom). Pipeline: psql reads state → stdlib-only python
-(no pip) fetches + writes SQL → psql applies. No custom image.
+CronJob `strava-sync` (16:00 America/New_York) pulls new activities from the
+Strava API into two tables (full-res GPS from the streams API; trainer/manual
+rides get the summary polyline or a NULL geom):
+
+- `strava_activities` — published as `strava:strava_activities`: geometry +
+  name, sport_type, start_date, distance, times, elevation gain, avg/max
+  speed, avg/max HR, avg watts, kudos.
+- `strava_activity_data` — NOT published (would bloat WFS): `raw` jsonb =
+  the complete API summary (query anything: `raw->>'suffer_score'`), and
+  `streams` jsonb = per-point time/altitude/heartrate/cadence/watts/
+  velocity/temp/grade along the track. Join `USING (id)`.
+
+Pipeline: psql bootstraps schema + reads state → stdlib-only python (no pip)
+fetches + writes SQL → psql applies (upserts). No custom image. After adding
+columns, refresh GeoServer's schema cache: `POST /geoserver/rest/reset`.
 
 One-time setup:
 
