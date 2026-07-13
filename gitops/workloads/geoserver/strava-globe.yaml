@@ -151,7 +151,7 @@ data:
       });
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
       // start centered on the US, pulled back far enough to see the whole globe face
-      viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-98.5, 39.8, 9500000) });
+      viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-98.5, 39.8, 14000000) });
       viewer.scene.renderError.addEventListener((_, err) => {
         const d = document.createElement('div');
         d.style.cssText = 'position:absolute;top:10px;right:10px;z-index:20;background:#fff;'+
@@ -289,7 +289,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "6"
+        checksum/config: "7"
     spec:
       containers:
         - name: nginx
