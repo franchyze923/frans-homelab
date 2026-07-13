@@ -1,0 +1,133 @@
+# PostGIS — vector datastore for the geospatial suite (Strava tracks etc.)
+# Internal-only (ClusterIP 5432, no HTTPRoute). GeoServer connects at
+# host "postgis", database "gis", user "gis"; password in Secret
+# postgis-credentials (out-of-band, see README).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgis-data
+  namespace: geoserver
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgis
+  namespace: geoserver
+  labels:
+    app: postgis
+spec:
+  replicas: 1
+  # Recreate: RWO PVC, same Multi-Attach reasoning as geoserver
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgis
+  template:
+    metadata:
+      labels:
+        app: postgis
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:17-3.6
+          env:
+            # Subdir keeps initdb happy: the RBD mount root contains lost+found
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_DB
+              value: gis
+            - name: POSTGRES_USER
+              value: gis
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgis-credentials
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 5432
+              name: postgres
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+          readinessProbe:
+            exec:
+              command: ['pg_isready', '-U', 'gis', '-d', 'gis']
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ['pg_isready', '-U', 'gis', '-d', 'gis']
+            periodSeconds: 30
+            failureThreshold: 4
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgis
+  namespace: geoserver
+  labels:
+    app: postgis
+spec:
+  type: ClusterIP
+  selector:
+    app: postgis
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+---
+# Nightly logical backup (pg_dump, not a data-dir tar — consistent while live)
+# to the shared geoserver NFS backup volume. Restore: see README.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgis-backup
+  namespace: geoserver
+spec:
+  # 03:30 to stagger against geoserver's 03:00 backup on the same NFS share
+  schedule: "30 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgis/postgis:17-3.6
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgis-credentials
+                      key: POSTGRES_PASSWORD
+              command: ['sh', '-c', 'echo "Starting postgis backup..."; pg_dump -h postgis -U gis -d gis | gzip > /data-backup/postgis-gis.sql.gz && echo "Backup complete at $(date): $(ls -lh /data-backup/postgis-gis.sql.gz)"']
+              volumeMounts:
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: geoserver-data-backup
