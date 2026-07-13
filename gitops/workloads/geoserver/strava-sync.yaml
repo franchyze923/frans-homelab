@@ -1,14 +1,18 @@
-# Daily Strava -> PostGIS sync. Pulls new activities via the Strava API and
-# inserts them into strava_activities (published as strava:strava_activities).
+# Daily Strava -> PostGIS sync. Pulls new activities via the Strava API into:
+#   strava_activities      - scalar metadata + track geometry (published as
+#                            strava:strava_activities; QGIS-friendly)
+#   strava_activity_data   - full raw API JSON + per-point streams jsonb
+#                            (time/altitude/heartrate/cadence/watts/velocity/
+#                            temp/grade), NOT published -- would bloat WFS
 #
 # Auth state (rotating refresh token -- Strava rotates like Withings does)
 # lives in the strava_auth table, so it's covered by the nightly pg_dump and
 # survives rebuilds. One-time setup: run strava-auth.sh to create the
 # strava-api Secret (client id/secret + first refresh token). See README.
 #
-# No custom image: psql reads state -> stdlib-only python talks to the API
-# and emits SQL -> psql applies it. Backfill is capped per run (rate limits);
-# it catches up across daily runs, or run it by hand:
+# No custom image: psql bootstraps schema + reads state -> stdlib-only python
+# talks to the API and emits SQL -> psql applies it. Backfill is capped per
+# run (rate limits); it catches up across daily runs, or run it by hand:
 #   kubectl -n geoserver create job --from=cronjob/strava-sync strava-sync-now
 apiVersion: v1
 kind: ConfigMap
@@ -21,6 +25,7 @@ data:
 
     API = "https://www.strava.com/api/v3"
     MAX_DETAIL = int(os.environ.get("MAX_ACTIVITIES_PER_RUN", "100"))
+    STREAM_KEYS = "latlng,time,altitude,heartrate,cadence,watts,velocity_smooth,temp,grade_smooth"
 
     def http(url, form=None):
         req = urllib.request.Request(url)
@@ -36,6 +41,14 @@ data:
 
     def esc(s):
         return "NULL" if s is None else "'" + str(s).replace("'", "''") + "'"
+
+    def num(v):
+        return "NULL" if v is None else str(v)
+
+    def jsonb(obj):
+        if not obj:
+            return "NULL"
+        return esc(json.dumps(obj, separators=(",", ":"))) + "::jsonb"
 
     def decode_polyline(s):
         pts, lat, lng, i = [], 0, 0, 0
@@ -97,25 +110,46 @@ data:
         page += 1
     acts = acts[:MAX_DETAIL]
 
-    # --- full-resolution track per activity; fall back to summary polyline
+    # --- full-resolution streams per activity; fall back to summary polyline
     loaded = 0
     for a in acts:
-        st, streams = http(f"{API}/activities/{a['id']}/streams?keys=latlng&key_by_type=true")
+        st, streams = http(f"{API}/activities/{a['id']}/streams?keys={STREAM_KEYS}&key_by_type=true")
         if st == 429:
-            print(f"rate limited after {loaded} activities; rest sync tomorrow")
+            print(f"rate limited after {loaded} activities; rest sync next run")
             break
-        if st == 200 and "latlng" in streams:
-            pts = [(lng, lat) for lat, lng in streams["latlng"]["data"]]
-        else:  # no GPS (trainer/manual) -> keep the row, maybe summary line
+        pts, extra = [], {}
+        if st == 200:
+            for k, v in streams.items():
+                if k == "latlng":
+                    pts = [(lng, lat) for lat, lng in v["data"]]
+                elif isinstance(v, dict) and "data" in v:
+                    extra[k] = v["data"]
+        if not pts:  # no GPS (trainer/manual) -> maybe summary line
             pts = decode_polyline((a.get("map") or {}).get("summary_polyline") or "")
         sql.append(
             "INSERT INTO strava_activities(id, name, sport_type, start_date,"
-            " distance_m, moving_time_s, elapsed_time_s, elev_gain_m, geom) VALUES ("
-            f"{a['id']}, {esc(a.get('name'))}, {esc(a.get('sport_type'))},"
-            f" {esc(a.get('start_date'))}, {a.get('distance') or 'NULL'},"
-            f" {a.get('moving_time') or 'NULL'}, {a.get('elapsed_time') or 'NULL'},"
-            f" {a.get('total_elevation_gain') or 'NULL'}, {wkt(pts)})"
-            " ON CONFLICT (id) DO NOTHING;")
+            " distance_m, moving_time_s, elapsed_time_s, elev_gain_m,"
+            " avg_speed_ms, max_speed_ms, avg_hr, max_hr, avg_watts, kudos, geom)"
+            f" VALUES ({a['id']}, {esc(a.get('name'))}, {esc(a.get('sport_type'))},"
+            f" {esc(a.get('start_date'))}, {num(a.get('distance'))},"
+            f" {num(a.get('moving_time'))}, {num(a.get('elapsed_time'))},"
+            f" {num(a.get('total_elevation_gain'))}, {num(a.get('average_speed'))},"
+            f" {num(a.get('max_speed'))}, {num(a.get('average_heartrate'))},"
+            f" {num(a.get('max_heartrate'))}, {num(a.get('average_watts'))},"
+            f" {num(a.get('kudos_count'))}, {wkt(pts)})"
+            " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,"
+            " sport_type = EXCLUDED.sport_type, start_date = EXCLUDED.start_date,"
+            " distance_m = EXCLUDED.distance_m, moving_time_s = EXCLUDED.moving_time_s,"
+            " elapsed_time_s = EXCLUDED.elapsed_time_s, elev_gain_m = EXCLUDED.elev_gain_m,"
+            " avg_speed_ms = EXCLUDED.avg_speed_ms, max_speed_ms = EXCLUDED.max_speed_ms,"
+            " avg_hr = EXCLUDED.avg_hr, max_hr = EXCLUDED.max_hr,"
+            " avg_watts = EXCLUDED.avg_watts, kudos = EXCLUDED.kudos,"
+            " geom = EXCLUDED.geom;")
+        sql.append(
+            f"INSERT INTO strava_activity_data(id, raw, streams) VALUES ({a['id']},"
+            f" {jsonb(a)}, {jsonb(extra)})"
+            " ON CONFLICT (id) DO UPDATE SET raw = EXCLUDED.raw,"
+            " streams = EXCLUDED.streams;")
         loaded += 1
 
     sql.append("COMMIT;")
@@ -150,7 +184,51 @@ spec:
                     secretKeyRef:
                       name: postgis-credentials
                       key: POSTGRES_PASSWORD
-              command: ['sh', '-c', "psql -h postgis -U gis -d gis -tAc \"SELECT COALESCE((SELECT refresh_token FROM strava_auth WHERE id=1),'')\" > /shared/refresh_token && psql -h postgis -U gis -d gis -tAc \"SELECT COALESCE(EXTRACT(EPOCH FROM max(start_date))::bigint,0) FROM strava_activities\" > /shared/after && echo \"state: after=$(cat /shared/after)\""]
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  psql -h postgis -U gis -d gis -v ON_ERROR_STOP=1 -q <<'SQL'
+                  CREATE TABLE IF NOT EXISTS strava_auth(
+                    id int PRIMARY KEY DEFAULT 1,
+                    refresh_token text NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT now());
+                  CREATE TABLE IF NOT EXISTS strava_activities(
+                    id bigint PRIMARY KEY,
+                    name text,
+                    sport_type text,
+                    start_date timestamptz,
+                    distance_m real,
+                    moving_time_s int,
+                    elapsed_time_s int,
+                    elev_gain_m real,
+                    avg_speed_ms real,
+                    max_speed_ms real,
+                    avg_hr real,
+                    max_hr real,
+                    avg_watts real,
+                    kudos int,
+                    geom geometry(LineString,4326));
+                  -- upgrades for tables created by the pre-metadata schema
+                  ALTER TABLE strava_activities
+                    ADD COLUMN IF NOT EXISTS avg_speed_ms real,
+                    ADD COLUMN IF NOT EXISTS max_speed_ms real,
+                    ADD COLUMN IF NOT EXISTS avg_hr real,
+                    ADD COLUMN IF NOT EXISTS max_hr real,
+                    ADD COLUMN IF NOT EXISTS avg_watts real,
+                    ADD COLUMN IF NOT EXISTS kudos int;
+                  CREATE INDEX IF NOT EXISTS strava_activities_geom_idx
+                    ON strava_activities USING gist(geom);
+                  CREATE TABLE IF NOT EXISTS strava_activity_data(
+                    id bigint PRIMARY KEY
+                      REFERENCES strava_activities(id) ON DELETE CASCADE,
+                    raw jsonb,
+                    streams jsonb);
+                  SQL
+                  psql -h postgis -U gis -d gis -tAc "SELECT COALESCE((SELECT refresh_token FROM strava_auth WHERE id=1),'')" > /shared/refresh_token
+                  psql -h postgis -U gis -d gis -tAc "SELECT COALESCE(EXTRACT(EPOCH FROM max(start_date))::bigint,0) FROM strava_activities" > /shared/after
+                  echo "state: after=$(cat /shared/after)"
               volumeMounts:
                 - name: shared
                   mountPath: /shared
