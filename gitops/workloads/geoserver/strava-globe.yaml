@@ -144,7 +144,10 @@ data:
         baseLayer: new Cesium.ImageryLayer(new Cesium.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'})),
         baseLayerPicker:false, geocoder:false, animation:false, timeline:false,
         homeButton:false, navigationHelpButton:false, fullscreenButton:false,
-        sceneModePicker:true, infoBox:true, selectionIndicator:true,
+        sceneModePicker:true, infoBox:true,
+        // no selectionIndicator: it anchors to a point position, which tracks
+        // don't have -- selection highlights the polyline instead (below)
+        selectionIndicator:false,
       });
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
       viewer.scene.renderError.addEventListener((_, err) => {
@@ -175,10 +178,28 @@ data:
           e.polyline.material = Cesium.Color.fromCssColorString(COLORS[fam]);
           e.polyline.width = 3;
         }
+        e._fam = fam;
         e.name = props.name || 'Activity';
         e.description = describe(props, fam);
         byId[e.id] = e;
       }
+
+      // selection = bold track + everything else fades; sidebar stays in sync
+      const itemByFid = {};
+      viewer.selectedEntityChanged.addEventListener(() => {
+        const sel = viewer.selectedEntity && viewer.selectedEntity.polyline
+          ? viewer.selectedEntity : null;
+        for (const e of ds.entities.values){
+          if (!e.polyline) continue;
+          const c = Cesium.Color.fromCssColorString(COLORS[e._fam]);
+          if (!sel)            { e.polyline.material = c; e.polyline.width = 3; }
+          else if (e === sel)  { e.polyline.material = c; e.polyline.width = 6; }
+          else { e.polyline.material = c.withAlpha(0.22); e.polyline.width = 2; }
+        }
+        document.querySelectorAll('.item.sel').forEach(x => x.classList.remove('sel'));
+        const div = sel && itemByFid[sel.id];
+        if (div){ div.classList.add('sel'); div.scrollIntoView({block:'nearest'}); }
+      });
 
       // --- sidebar
       const on = Object.fromEntries(FAMILIES.map(f => [f, true]));
@@ -218,12 +239,11 @@ data:
           '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtKm(p.distance_m)||fmtDur(p.moving_time_s))+
           (gps?'':' · no GPS')+'</span></span>';
         div.querySelector('.nm').textContent = p.name || 'Activity';
+        if (gps) itemByFid[f.id] = div;
         div.onclick = () => {
           const e = byId[f.id];
           if (!e) return;
-          document.querySelectorAll('.item.sel').forEach(x => x.classList.remove('sel'));
-          div.classList.add('sel');
-          viewer.selectedEntity = e;
+          viewer.selectedEntity = e;   // highlight + .sel via selection listener
           viewer.flyTo(e, { duration: 1.6 });
         };
         return { div, fam, name:(p.name||'').toLowerCase(), fid:f.id, gps };
@@ -268,7 +288,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "3"
+        checksum/config: "4"
     spec:
       containers:
         - name: nginx
