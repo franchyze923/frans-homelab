@@ -90,7 +90,7 @@ data:
         <h1>Fran's Strava Globe</h1>
         <div id="stats">
           <div class="stat"><b id="stN">–</b><span>activities</span></div>
-          <div class="stat"><b id="stKm">–</b><span>total km</span></div>
+          <div class="stat"><b id="stKm">–</b><span>total miles</span></div>
           <div class="stat"><b id="stYr">–</b><span>years</span></div>
         </div>
       </header>
@@ -109,23 +109,25 @@ data:
                      Hike:'#008300', Swim:'#4a3aa7', Other:'#6b7280' };
     const family = s => FAMILIES.find(f => (s||'').includes(f)) || 'Other';
 
-    const fmtKm = m => m==null ? '' : (m/1000).toFixed(1)+' km';
+    const MI = 1609.344;
+    const fmtMi = m => m==null ? '' : (m/MI).toFixed(1)+' mi';
+    const fmtDist = m => m==null ? '' : (m/MI).toFixed(1)+' mi ('+(m/1000).toFixed(1)+' km)';
     const fmtDur = s => { if(s==null) return ''; const h=Math.floor(s/3600), m=Math.round(s%3600/60);
       return h ? h+'h '+String(m).padStart(2,'0')+'m' : m+' min'; };
     const fmtDate = d => new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
     const fmtPace = (p, fam) => {
       if(!p.avg_speed_ms) return null;
-      if(fam==='Run'||fam==='Walk'||fam==='Hike'){ const spk=1000/p.avg_speed_ms;
-        return Math.floor(spk/60)+':'+String(Math.round(spk%60)).padStart(2,'0')+' /km'; }
-      return (p.avg_speed_ms*3.6).toFixed(1)+' km/h';
+      if(fam==='Run'||fam==='Walk'||fam==='Hike'){ const spm=MI/p.avg_speed_ms;
+        return Math.floor(spm/60)+':'+String(Math.round(spm%60)).padStart(2,'0')+' /mi'; }
+      return (p.avg_speed_ms*2.23694).toFixed(1)+' mph';
     };
 
     function describe(p, fam){
       const rows = [
         ['Date', fmtDate(p.start_date)], ['Sport', p.sport_type],
-        ['Distance', fmtKm(p.distance_m)], ['Moving time', fmtDur(p.moving_time_s)],
+        ['Distance', fmtDist(p.distance_m)], ['Moving time', fmtDur(p.moving_time_s)],
         [fam==='Ride'?'Avg speed':'Avg pace', fmtPace(p, fam)],
-        ['Elev gain', p.elev_gain_m!=null ? Math.round(p.elev_gain_m)+' m' : null],
+        ['Elev gain', p.elev_gain_m!=null ? Math.round(p.elev_gain_m*3.28084)+' ft' : null],
         ['Avg HR', p.avg_hr!=null ? Math.round(p.avg_hr)+' bpm' : null],
         ['Max HR', p.max_hr!=null ? Math.round(p.max_hr)+' bpm' : null],
         ['Avg power', p.avg_watts!=null ? Math.round(p.avg_watts)+' W' : null],
@@ -250,7 +252,7 @@ data:
         if (f.properties.start_date) years.add(new Date(f.properties.start_date).getFullYear());
       }
       document.getElementById('stN').textContent = feats.length.toLocaleString();
-      document.getElementById('stKm').textContent = Math.round(totalM/1000).toLocaleString();
+      document.getElementById('stKm').textContent = Math.round(totalM/MI).toLocaleString();
       document.getElementById('stYr').textContent = years.size;
 
       const chips = document.getElementById('chips');
@@ -273,7 +275,7 @@ data:
         div.className = 'item' + (gps ? '' : ' nogps');
         div.innerHTML = '<span class="dot" style="background:'+COLORS[fam]+'"></span>'+
           '<span class="meta"><span class="nm"></span>'+
-          '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtKm(p.distance_m)||fmtDur(p.moving_time_s))+
+          '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtMi(p.distance_m)||fmtDur(p.moving_time_s))+
           (gps?'':' · no GPS')+'</span></span>';
         div.querySelector('.nm').textContent = p.name || 'Activity';
         if (gps) itemByFid[f.id] = div;
@@ -324,7 +326,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "12"
+        checksum/config: "13"
     spec:
       containers:
         - name: nginx
