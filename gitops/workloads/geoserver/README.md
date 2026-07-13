@@ -139,7 +139,27 @@ the Secret, which only seeds the first run — so it's inside the nightly
 `pg_dump` and survives rebuilds. Never run two sync jobs concurrently
 (`concurrencyPolicy: Forbid` enforces this).
 
+## Strava Globe (`strava-globe.yaml`) — https://tracks.franpolignano.com
+
+Cesium.js 3D viewer for the activities. Static page (ConfigMap) on stock
+nginx; no custom image. nginx proxies `/geoserver/` to the in-cluster
+service so the browser sees one origin (no CORS). Feeds on
+`strava:strava_activities_globe`, a `ST_SimplifyPreserveTopology(geom,
+0.00005)` view (~5x smaller payload; full-res geometry stays in
+`strava_activities`). Cesium + OSM tiles come from CDNs (no ion token —
+add one + world terrain later if 3D relief is wanted).
+
+Gotchas learned:
+- subPath ConfigMap mounts don't live-update: bump the
+  `checksum/config` annotation in the same commit as any html/conf change.
+- Don't use `clampToGround` polylines: no terrain to drape on, and ground
+  polylines crash limited-WebGL clients.
+- Track colors are a CVD-validated categorical palette, fixed
+  sport→color mapping (Run blue, Ride aqua, Walk yellow, Hike green,
+  Swim violet, Other gray).
+
 ## Suite roadmap
 
 - NFS read-only mount for raster/shapefile source data from Unraid
-- Style the activities layer (SLD) + a small web map frontend
+- Cesium ion token + world terrain for 3D relief under the tracks
+- SLD styling for the WMS side (QGIS/GeoServer previews)
