@@ -140,9 +140,38 @@ data:
 
     async function main(){
       Cesium.Ion.defaultAccessToken = '';
+      // Free no-API-key basemaps for the native picker (no ion layers)
+      const icon = n => Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/'+n);
+      const basemaps = [
+        new Cesium.ProviderViewModel({
+          name:'Streets', tooltip:'OpenStreetMap', iconUrl:icon('openStreetMap.png'),
+          creationFunction: () => new Cesium.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'}),
+        }),
+        new Cesium.ProviderViewModel({
+          name:'Satellite', tooltip:'Esri World Imagery', iconUrl:icon('esriWorldImagery.png'),
+          creationFunction: () => new Cesium.UrlTemplateImageryProvider({
+            url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            credit:'Esri, Maxar, Earthstar Geographics', maximumLevel:19 }),
+        }),
+        new Cesium.ProviderViewModel({
+          name:'Topo', tooltip:'OpenTopoMap', iconUrl:icon('naturalEarthII.png'),
+          creationFunction: () => new Cesium.UrlTemplateImageryProvider({
+            url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', subdomains:['a','b','c'],
+            credit:'© OpenStreetMap, SRTM | style: OpenTopoMap (CC-BY-SA)', maximumLevel:17 }),
+        }),
+        new Cesium.ProviderViewModel({
+          name:'Dark', tooltip:'Carto Dark Matter', iconUrl:icon('blackMarble.png'),
+          creationFunction: () => new Cesium.UrlTemplateImageryProvider({
+            url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', subdomains:['a','b','c','d'],
+            credit:'© OpenStreetMap contributors © CARTO', maximumLevel:19 }),
+        }),
+      ];
       const viewer = new Cesium.Viewer('globe', {
-        baseLayer: new Cesium.ImageryLayer(new Cesium.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'})),
-        baseLayerPicker:false, geocoder:false, animation:false, timeline:false,
+        baseLayerPicker:true,
+        imageryProviderViewModels: basemaps,
+        selectedImageryProviderViewModel: basemaps[0],
+        terrainProviderViewModels: [],
+        geocoder:false, animation:false, timeline:false,
         homeButton:false, navigationHelpButton:false, fullscreenButton:false,
         sceneModePicker:true, infoBox:true,
         // no selectionIndicator: it anchors to a point position, which tracks
@@ -289,7 +318,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "8"
+        checksum/config: "9"
     spec:
       containers:
         - name: nginx
