@@ -147,6 +147,15 @@ data:
         sceneModePicker:true, infoBox:true, selectionIndicator:true,
       });
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
+      viewer.scene.renderError.addEventListener((_, err) => {
+        const d = document.createElement('div');
+        d.style.cssText = 'position:absolute;top:10px;right:10px;z-index:20;background:#fff;'+
+          'color:#b3261e;padding:10px 14px;border-radius:8px;font-size:12px;max-width:480px;'+
+          'box-shadow:0 2px 10px rgba(0,0,0,.25)';
+        d.textContent = 'Render error: ' + (err && (err.message || err));
+        document.body.appendChild(d);
+        console.error('cesium renderError', err);
+      });
 
       const gj = await (await fetch(WFS)).json();
       const feats = gj.features || [];
@@ -259,7 +268,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "2"
+        checksum/config: "3"
     spec:
       containers:
         - name: nginx
