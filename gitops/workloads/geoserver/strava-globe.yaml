@@ -1,0 +1,324 @@
+# Strava Globe -- Cesium.js 3D viewer for the strava:strava_activities_globe
+# WFS layer (simplified-geometry view; full-res stays in postgis). Static
+# page on stock nginx, no custom image; nginx proxies /geoserver/ to the
+# in-cluster service so the browser sees one origin (no CORS).
+# Track colors: validated categorical palette, fixed sport->slot mapping.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strava-globe
+  namespace: geoserver
+data:
+  default.conf: |
+    server {
+      listen 80;
+      root /usr/share/nginx/html;
+      gzip on;
+      gzip_proxied any;
+      gzip_types application/json application/javascript text/css;
+      location = / { try_files /index.html =404; }
+      location /geoserver/ {
+        proxy_pass http://geoserver:8080;
+        proxy_set_header Host geoserver.franpolignano.com;
+      }
+    }
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fran's Strava Globe</title>
+    <script>window.CESIUM_BASE_URL='https://cdn.jsdelivr.net/npm/cesium@1.143.0/Build/Cesium/';</script>
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.143.0/Build/Cesium/Cesium.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.143.0/Build/Cesium/Widgets/widgets.css">
+    <style>
+      :root {
+        --surface:#fcfcfb; --ink:#20242a; --ink-2:#5a6270; --ink-3:#8a91a0;
+        --line:#e4e4e0; --hover:#f1f1ee;
+      }
+      * { box-sizing:border-box; margin:0; }
+      html,body { height:100%; font-family:system-ui,-apple-system,sans-serif; }
+      body { display:flex; overflow:hidden; }
+      #side {
+        width:330px; min-width:330px; background:var(--surface); color:var(--ink);
+        border-right:1px solid var(--line); display:flex; flex-direction:column; z-index:5;
+      }
+      #side header { padding:16px 16px 10px; }
+      #side h1 { font-size:17px; font-weight:650; }
+      #stats { display:flex; gap:18px; margin-top:10px; }
+      #stats .stat b { display:block; font-size:19px; font-weight:650; font-variant-numeric:tabular-nums; }
+      #stats .stat span { font-size:11px; color:var(--ink-2); }
+      #chips { display:flex; flex-wrap:wrap; gap:6px; padding:4px 16px 10px; }
+      .chip {
+        display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink);
+        border:1px solid var(--line); border-radius:999px; padding:3px 10px; cursor:pointer;
+        background:none; font-family:inherit;
+      }
+      .chip .dot { width:9px; height:9px; border-radius:50%; }
+      .chip .n { color:var(--ink-3); font-variant-numeric:tabular-nums; }
+      .chip.off { opacity:.38; }
+      #search {
+        margin:0 16px 8px; padding:7px 10px; font-size:13px; font-family:inherit;
+        border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); width:calc(100% - 32px);
+      }
+      #list { flex:1; overflow-y:auto; border-top:1px solid var(--line); }
+      .item { display:flex; gap:10px; align-items:center; padding:8px 16px; cursor:pointer; border-bottom:1px solid var(--line); }
+      .item:hover { background:var(--hover); }
+      .item.sel { background:#e9f0fb; }
+      .item .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+      .item .meta { min-width:0; }
+      .item .nm { font-size:13px; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .item .sub { font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .item.nogps { opacity:.55; }
+      #globe { flex:1; }
+      #loading {
+        position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+        background:var(--surface); color:var(--ink-2); font-size:14px; z-index:10;
+      }
+      @media (max-width:700px) {
+        #side { position:absolute; height:45%; bottom:0; width:100%; min-width:0; border-right:none; border-top:1px solid var(--line); }
+        #globe { position:absolute; inset:0; }
+      }
+    </style>
+    </head>
+    <body>
+    <div id="side">
+      <header>
+        <h1>Fran's Strava Globe</h1>
+        <div id="stats">
+          <div class="stat"><b id="stN">–</b><span>activities</span></div>
+          <div class="stat"><b id="stKm">–</b><span>total km</span></div>
+          <div class="stat"><b id="stYr">–</b><span>years</span></div>
+        </div>
+      </header>
+      <div id="chips"></div>
+      <input id="search" type="search" placeholder="Search activities…">
+      <div id="list"></div>
+    </div>
+    <div id="globe"></div>
+    <div id="loading">Loading activities…</div>
+    <script>
+    const WFS = '/geoserver/strava/ows?service=WFS&version=2.0.0&request=GetFeature'
+      + '&typeNames=strava:strava_activities_globe&outputFormat=application/json';
+    // Fixed sport->color mapping (validated categorical palette; gray = Other)
+    const FAMILIES = ['Run','Ride','Walk','Hike','Swim','Other'];
+    const COLORS = { Run:'#2a78d6', Ride:'#1baf7a', Walk:'#eda100',
+                     Hike:'#008300', Swim:'#4a3aa7', Other:'#6b7280' };
+    const family = s => FAMILIES.find(f => (s||'').includes(f)) || 'Other';
+
+    const fmtKm = m => m==null ? '' : (m/1000).toFixed(1)+' km';
+    const fmtDur = s => { if(s==null) return ''; const h=Math.floor(s/3600), m=Math.round(s%3600/60);
+      return h ? h+'h '+String(m).padStart(2,'0')+'m' : m+' min'; };
+    const fmtDate = d => new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+    const fmtPace = (p, fam) => {
+      if(!p.avg_speed_ms) return null;
+      if(fam==='Run'||fam==='Walk'||fam==='Hike'){ const spk=1000/p.avg_speed_ms;
+        return Math.floor(spk/60)+':'+String(Math.round(spk%60)).padStart(2,'0')+' /km'; }
+      return (p.avg_speed_ms*3.6).toFixed(1)+' km/h';
+    };
+
+    function describe(p, fam){
+      const rows = [
+        ['Date', fmtDate(p.start_date)], ['Sport', p.sport_type],
+        ['Distance', fmtKm(p.distance_m)], ['Moving time', fmtDur(p.moving_time_s)],
+        [fam==='Ride'?'Avg speed':'Avg pace', fmtPace(p, fam)],
+        ['Elev gain', p.elev_gain_m!=null ? Math.round(p.elev_gain_m)+' m' : null],
+        ['Avg HR', p.avg_hr!=null ? Math.round(p.avg_hr)+' bpm' : null],
+        ['Max HR', p.max_hr!=null ? Math.round(p.max_hr)+' bpm' : null],
+        ['Avg power', p.avg_watts!=null ? Math.round(p.avg_watts)+' W' : null],
+        ['Kudos', p.kudos || null],
+      ].filter(r => r[1]!=null && r[1]!=='');
+      const tr = rows.map(r =>
+        '<tr><td style="color:#9aa2b1;padding:3px 12px 3px 0;white-space:nowrap">'+r[0]+
+        '</td><td style="padding:3px 0">'+r[1]+'</td></tr>').join('');
+      const sid = String(p.id ?? '').replace(/\D/g,'');
+      const link = sid ? '<p style="margin-top:8px"><a href="https://www.strava.com/activities/'+sid+
+        '" target="_blank" style="color:#6ea8e8">Open in Strava ↗</a></p>' : '';
+      return '<table style="font-size:13px;border-collapse:collapse">'+tr+'</table>'+link;
+    }
+
+    async function main(){
+      Cesium.Ion.defaultAccessToken = '';
+      const viewer = new Cesium.Viewer('globe', {
+        baseLayer: new Cesium.ImageryLayer(new Cesium.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'})),
+        baseLayerPicker:false, geocoder:false, animation:false, timeline:false,
+        homeButton:false, navigationHelpButton:false, fullscreenButton:false,
+        sceneModePicker:true, infoBox:true, selectionIndicator:true,
+      });
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
+
+      const gj = await (await fetch(WFS)).json();
+      const feats = gj.features || [];
+      feats.sort((a,b) => new Date(b.properties.start_date) - new Date(a.properties.start_date));
+      const withGeom = { type:'FeatureCollection',
+        features: feats.filter(f => f.geometry && f.geometry.coordinates?.length > 1) };
+
+      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround:true });
+      viewer.dataSources.add(ds);
+      const byId = {};
+      for (const e of ds.entities.values){
+        const props = {}; for (const k of e.properties.propertyNames) props[k] = e.properties[k].getValue();
+        const fam = family(props.sport_type);
+        if (e.polyline){
+          e.polyline.material = Cesium.Color.fromCssColorString(COLORS[fam]);
+          e.polyline.width = 3;
+        }
+        e.name = props.name || 'Activity';
+        e.description = describe(props, fam);
+        byId[e.id] = e;
+      }
+
+      // --- sidebar
+      const on = Object.fromEntries(FAMILIES.map(f => [f, true]));
+      let query = '';
+      const counts = {}; let totalM = 0;
+      const years = new Set();
+      for (const f of feats){
+        const fam = family(f.properties.sport_type);
+        counts[fam] = (counts[fam]||0) + 1;
+        totalM += f.properties.distance_m || 0;
+        if (f.properties.start_date) years.add(new Date(f.properties.start_date).getFullYear());
+      }
+      document.getElementById('stN').textContent = feats.length.toLocaleString();
+      document.getElementById('stKm').textContent = Math.round(totalM/1000).toLocaleString();
+      document.getElementById('stYr').textContent = years.size;
+
+      const chips = document.getElementById('chips');
+      for (const f of FAMILIES.filter(f => counts[f])){
+        const b = document.createElement('button');
+        b.className = 'chip';
+        b.innerHTML = '<span class="dot" style="background:'+COLORS[f]+'"></span>'+f+
+                      ' <span class="n">'+counts[f]+'</span>';
+        b.onclick = () => { on[f] = !on[f]; b.classList.toggle('off', !on[f]); refresh(); };
+        chips.appendChild(b);
+      }
+      document.getElementById('search').addEventListener('input',
+        e => { query = e.target.value.toLowerCase(); refresh(); });
+
+      const list = document.getElementById('list');
+      const items = feats.map(f => {
+        const p = f.properties, fam = family(p.sport_type);
+        const div = document.createElement('div');
+        const gps = f.geometry && f.geometry.coordinates?.length > 1;
+        div.className = 'item' + (gps ? '' : ' nogps');
+        div.innerHTML = '<span class="dot" style="background:'+COLORS[fam]+'"></span>'+
+          '<span class="meta"><span class="nm"></span>'+
+          '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtKm(p.distance_m)||fmtDur(p.moving_time_s))+
+          (gps?'':' · no GPS')+'</span></span>';
+        div.querySelector('.nm').textContent = p.name || 'Activity';
+        div.onclick = () => {
+          const e = byId[f.id];
+          if (!e) return;
+          document.querySelectorAll('.item.sel').forEach(x => x.classList.remove('sel'));
+          div.classList.add('sel');
+          viewer.selectedEntity = e;
+          viewer.flyTo(e, { duration: 1.6 });
+        };
+        return { div, fam, name:(p.name||'').toLowerCase(), fid:f.id, gps };
+      });
+      for (const it of items) list.appendChild(it.div);
+
+      function refresh(){
+        for (const it of items){
+          const show = on[it.fam] && (!query || it.name.includes(query));
+          it.div.style.display = show ? '' : 'none';
+          const e = byId[it.fid];
+          if (e) e.show = show;
+        }
+      }
+
+      document.getElementById('loading').remove();
+      if (withGeom.features.length) viewer.flyTo(ds);
+    }
+    main().catch(err => {
+      document.getElementById('loading').textContent = 'Failed to load: ' + err;
+    });
+    </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strava-globe
+  namespace: geoserver
+  labels:
+    app: strava-globe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: strava-globe
+  template:
+    metadata:
+      labels:
+        app: strava-globe
+      annotations:
+        # subPath ConfigMap mounts don't live-update: bump this counter in the
+        # same commit as any index.html/default.conf change to roll the pod
+        checksum/config: "1"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+          volumeMounts:
+            - name: site
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+              readOnly: true
+            - name: site
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+      volumes:
+        - name: site
+          configMap:
+            name: strava-globe
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: strava-globe
+  namespace: geoserver
+  labels:
+    app: strava-globe
+spec:
+  type: ClusterIP
+  selector:
+    app: strava-globe
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: strava-globe
+  namespace: geoserver
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - tracks.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: strava-globe
+          port: 80

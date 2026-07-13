@@ -182,6 +182,17 @@ spec:
   hostnames:
     - geoserver.franpolignano.com
   rules:
+    # Tomcat serves nothing at / (404); send browsers to the web UI
+    - matches:
+        - path:
+            type: Exact
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /geoserver/web/
     - backendRefs:
         - name: geoserver
           port: 8080
