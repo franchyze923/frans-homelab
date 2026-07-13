@@ -123,21 +123,22 @@ spec:
               cpu: "500m"
             limits:
               memory: "4Gi"
+          # Probe OWS, not /geoserver/web/ -- the Wicket UI 302-loops for
+          # cookieless clients like kubelet, so a web-UI probe never passes.
           # First boot downloads extensions and seeds the data dir; give it time
           startupProbe:
             httpGet:
-              path: /geoserver/web/
+              path: /geoserver/ows?service=WMS&version=1.3.0&request=GetCapabilities
               port: 8080
             periodSeconds: 10
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /geoserver/web/
+              path: /geoserver/ows?service=WMS&version=1.3.0&request=GetCapabilities
               port: 8080
             periodSeconds: 15
           livenessProbe:
-            httpGet:
-              path: /geoserver/web/
+            tcpSocket:
               port: 8080
             periodSeconds: 30
             failureThreshold: 4
