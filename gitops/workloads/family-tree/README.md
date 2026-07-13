@@ -7,11 +7,13 @@ forms, free-text dates. Source lives in the `family-tree` repo; image is
 
 - **URL:** https://family-tree.franpolignano.com (Pi-hole wildcard → gateway)
 - **Storage:** `family-tree-data` PVC (rook-ceph-block, RWO) holds
-  `familytree.db` (SQLite) and `photos/`. Nothing sensitive in git or the
+  `familytree.db` (SQLite), `photos/`, and `files/` (per-person document
+  attachments: PDFs, Word, pictures, …). Nothing sensitive in git or the
   image; no secrets needed.
-- **Backups:** the UI has "Download a backup" (JSON, everything except photo
-  binaries). Photos live only on the PVC — if they start accumulating,
-  consider a CronJob copy to the NAS like the other backup jobs.
+- **Backups:** the UI has "Download a backup" (JSON, everything except
+  photo/document binaries). Photos and attached files live only on the PVC —
+  if they start accumulating, consider a CronJob copy to the NAS like the
+  other backup jobs.
 
 ## Rebuild / update
 
