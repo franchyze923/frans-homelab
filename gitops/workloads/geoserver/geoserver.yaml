@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: geoserver
+---
+# Data dir on Ceph RBD for reliability (no stale NFS handles)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: geoserver-data
+  namespace: geoserver
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 20Gi
+---
+# NFS volume for data-dir backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: geoserver-data-backup-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/geoserver
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: geoserver-data-backup
+  namespace: geoserver
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: geoserver-data-backup-pv
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geoserver
+  namespace: geoserver
+  labels:
+    app: geoserver
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce, so RollingUpdate deadlocks with a
+  # Multi-Attach error (old pod holds the volume) when the pod is replaced.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: geoserver
+  template:
+    metadata:
+      labels:
+        app: geoserver
+    spec:
+      initContainers:
+        - name: restore-data
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /data-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /data-backup/backup.tar.gz -C /data; chown -R 1000:1000 /data; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
+      containers:
+        - name: geoserver
+          image: kartoza/geoserver:2.28.4
+          env:
+            - name: GEOSERVER_DATA_DIR
+              value: /opt/geoserver/data_dir
+            - name: GEOSERVER_ADMIN_USER
+              value: admin
+            - name: GEOSERVER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: geoserver-admin
+                  key: GEOSERVER_ADMIN_PASSWORD
+            # JVM heap; keep below the container memory limit
+            - name: INITIAL_MEMORY
+              value: "1G"
+            - name: MAXIMUM_MEMORY
+              value: "3G"
+            # Proxy base URL so WMS/WFS capabilities advertise the public HTTPS
+            # endpoint instead of the pod address (TLS terminates at main-gateway)
+            - name: HTTP_SCHEME
+              value: https
+            - name: HTTPS_PROXY_NAME
+              value: geoserver.franpolignano.com
+            - name: HTTPS_PROXY_PORT
+              value: "443"
+            # Without this the web UI rejects logins that arrive through the gateway
+            - name: GEOSERVER_CSRF_WHITELIST
+              value: franpolignano.com
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+          # First boot downloads extensions and seeds the data dir; give it time
+          startupProbe:
+            httpGet:
+              path: /geoserver/web/
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /geoserver/web/
+              port: 8080
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /geoserver/web/
+              port: 8080
+            periodSeconds: 30
+            failureThreshold: 4
+          volumeMounts:
+            - name: data
+              mountPath: /opt/geoserver/data_dir
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: geoserver-data
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: geoserver-data-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geoserver
+  namespace: geoserver
+  labels:
+    app: geoserver
+spec:
+  type: ClusterIP
+  selector:
+    app: geoserver
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: geoserver
+  namespace: geoserver
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - geoserver.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: geoserver
+          port: 8080
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: geoserver-data-backup
+  namespace: geoserver
+spec:
+  # 03:00 to stagger against jellyfin's 02:00 backup on the same NFS share
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: geoserver
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting geoserver data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: geoserver-data
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: geoserver-data-backup
