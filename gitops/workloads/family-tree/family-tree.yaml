@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: family-tree
+---
+# SQLite database + uploaded photos. Ceph RBD block storage (RWO) -- single
+# writer, no NFS stale-handle risk. All family data lives here, nothing in git.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: family-tree-data
+  namespace: family-tree
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: family-tree
+  namespace: family-tree
+  labels:
+    app: family-tree
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce and SQLite wants a single writer.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: family-tree
+  template:
+    metadata:
+      labels:
+        app: family-tree
+    spec:
+      containers:
+        - name: family-tree
+          image: franchyze923/family-tree:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: DATA_DIR
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: family-tree-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: family-tree
+  namespace: family-tree
+  labels:
+    app: family-tree
+spec:
+  type: ClusterIP
+  selector:
+    app: family-tree
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: family-tree
+  namespace: family-tree
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - family-tree.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: family-tree
+          port: 5000
