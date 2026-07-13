@@ -44,8 +44,66 @@ Add via env, e.g. `STABLE_EXTENSIONS=css-plugin,importer-plugin` (downloads on
 container start, persists in the data dir). List of valid names:
 https://github.com/kartoza/docker-geoserver/blob/master/build_data/stable_plugins.txt
 
+## PostGIS (`postgis.yaml`)
+
+`postgis/postgis:17-3.5` in the same namespace — internal-only vector
+datastore (host `postgis`, db/user `gis`). Data on Ceph RBD; nightly
+`pg_dump` at 03:30 to the shared NFS backup volume
+(`postgis-gis.sql.gz`). Password in Secret `postgis-credentials`
+(out-of-band, NOT in git; plaintext in `cluster/postgis-credentials.txt`).
+Template:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgis-credentials
+  namespace: geoserver
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "REPLACE_ME"
+```
+
+Restore after rebuild (data dir re-inits empty from env, then):
+
+```sh
+kubectl -n geoserver exec -i deploy/postgis -- sh -c \
+  'gunzip | psql -U gis -d gis' < postgis-gis.sql.gz
+```
+
+GeoServer is wired to it already: workspace `strava`, datastore `postgis`
+(created via REST; lives in the geoserver data dir, so it's covered by the
+geoserver backup). If rebuilt from scratch without a backup, recreate the
+workspace/datastore in the UI or via REST.
+
+## Strava tracks (GPX → PostGIS → WMS/WFS)
+
+Table `strava_tracks` (MultiLineString, EPSG:4326) is published as layer
+`strava:strava_tracks`. Load GPX files with:
+
+```sh
+./load-gpx.sh ~/Downloads/strava-export/activities/   # dir or single .gpx
+```
+
+The script port-forwards PostGIS and runs `ogr2ogr` (GDAL container via
+podman) against each file's `tracks` layer, appending to `strava_tracks`.
+Quick view: layer preview in the GeoServer UI, or
+https://geoserver.franpolignano.com/geoserver/strava/wms?service=WMS&version=1.3.0&request=GetMap&layers=strava:strava_tracks&crs=EPSG:4326&bbox=-90,-180,90,180&width=1024&height=512&format=application/openlayers
+
+Getting the GPX files out of Strava:
+
+- **Bulk export** (easiest, all history): strava.com → Settings → My Account
+  → "Download or Delete Your Account" → "Download Request". Email arrives
+  with a zip; `activities/` holds the files. NOTE: rides recorded on
+  devices upload as `.fit.gz`, not GPX — convert with
+  `gpsbabel -i garmin_fit -f x.fit -o gpx -F x.gpx` or load FIT directly
+  (GDAL has no FIT driver, so convert first).
+- **Per-activity**: activity page → ⋯ → "Export GPX" (always GPX).
+- **API**: needs an OAuth app (strava.com/settings/api) — worth it later
+  for an automated sync CronJob, overkill for a first load.
+
 ## Suite roadmap
 
-- PostGIS (kartoza/postgis) as a proper vector datastore — GeoServer's
-  built-in datastores are file-based until then
+- Strava API sync CronJob (auto-pull new activities instead of manual GPX)
 - NFS read-only mount for raster/shapefile source data from Unraid
+- Style the tracks layer (SLD) + a small web map frontend
