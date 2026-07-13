@@ -17,6 +17,8 @@ data:
       gzip_proxied any;
       gzip_types application/json application/javascript text/css;
       location = / { try_files /index.html =404; }
+      # ion token from Secret cesium-ion (not in git); 404 if secret absent
+      location = /cesium-token { default_type text/plain; alias /globe-secret/token; }
       location /geoserver/ {
         proxy_pass http://geoserver:8080;
         proxy_set_header Host geoserver.franpolignano.com;
@@ -139,7 +141,10 @@ data:
     }
 
     async function main(){
-      Cesium.Ion.defaultAccessToken = '';
+      // ion token (served from a k8s Secret; empty = flat ellipsoid, no ion)
+      const ionToken = (await fetch('/cesium-token').then(r => r.ok ? r.text() : '')
+        .catch(() => '')).trim();
+      Cesium.Ion.defaultAccessToken = ionToken;
       // Free no-API-key basemaps for the native picker (no ion layers)
       const icon = n => Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/'+n);
       const basemaps = [
@@ -179,6 +184,7 @@ data:
         selectionIndicator:false,
       });
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
+      if (ionToken) viewer.scene.setTerrain(Cesium.Terrain.fromWorldTerrain());
       // start centered on the US, pulled back far enough to see the whole globe face
       viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-98.5, 39.8, 20000000) });
       viewer.scene.renderError.addEventListener((_, err) => {
@@ -197,9 +203,9 @@ data:
       const withGeom = { type:'FeatureCollection',
         features: feats.filter(f => f.geometry && f.geometry.coordinates?.length > 1) };
 
-      // no clampToGround: we render no 3D terrain, and ground polylines
-      // crash software/limited WebGL (headless chrome, some iGPUs)
-      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround:false });
+      // with terrain, drape tracks on it (else they hide inside mountains);
+      // without, plain polylines -- ground polylines need capable WebGL
+      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround: !!ionToken });
       viewer.dataSources.add(ds);
       const byId = {};
       for (const e of ds.entities.values){
@@ -318,7 +324,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "10"
+        checksum/config: "11"
     spec:
       containers:
         - name: nginx
@@ -346,10 +352,17 @@ spec:
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
               readOnly: true
+            - name: ion-token
+              mountPath: /globe-secret
+              readOnly: true
       volumes:
         - name: site
           configMap:
             name: strava-globe
+        - name: ion-token
+          secret:
+            secretName: cesium-ion
+            optional: true
 ---
 apiVersion: v1
 kind: Service

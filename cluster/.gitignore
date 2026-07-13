@@ -30,6 +30,7 @@ keycloak-credentials.txt
 geoserver-credentials.txt
 postgis-credentials.txt
 strava-credentials.txt
+cesium-ion-token.txt
 
 # Deployment artifact backups
 deployments/
