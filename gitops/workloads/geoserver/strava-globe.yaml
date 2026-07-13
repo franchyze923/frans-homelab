@@ -154,7 +154,9 @@ data:
       const withGeom = { type:'FeatureCollection',
         features: feats.filter(f => f.geometry && f.geometry.coordinates?.length > 1) };
 
-      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround:true });
+      // no clampToGround: we render no 3D terrain, and ground polylines
+      // crash software/limited WebGL (headless chrome, some iGPUs)
+      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround:false });
       viewer.dataSources.add(ds);
       const byId = {};
       for (const e of ds.entities.values){
@@ -257,7 +259,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "1"
+        checksum/config: "2"
     spec:
       containers:
         - name: nginx
