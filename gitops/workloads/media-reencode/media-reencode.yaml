@@ -171,8 +171,11 @@ data:
     # Orphaned tmp files self-heal -- encode_one truncates its tmp before use,
     # and a crashed file stays a candidate until done/skip/fail.
     heartbeat &
+    # Re-fetch the queue after every file and take the biggest claimable
+    # candidate: stays biggest-first as locks come and go, and stale locks
+    # from dead pods are retried within ~15 min instead of next pass.
     while true; do
-      n=0
+      picked=0
       while IFS='|' read -r _sz kind src; do
         [ -n "$src" ] || continue
         case "$src" in /media/*) ;; *) continue;; esac
@@ -182,10 +185,13 @@ data:
         claim "$lock" || continue
         encode_one "$kind" "$src"
         rm -rf "$lock" 2>/dev/null
-        n=$((n+1))
+        picked=1
+        break
       done < <(fetch_candidates)
-      log "pass complete ($n processed); sleeping 6h before re-checking library"
-      sleep 21600
+      if [ "$picked" = 0 ]; then
+        log "no claimable candidates; sleeping 6h before re-checking library"
+        sleep 21600
+      fi
     done
 ---
 apiVersion: apps/v1
