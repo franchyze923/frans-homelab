@@ -219,8 +219,10 @@ spec:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-              # Keep off the GPU box (Plex/Frigate/ollama live there) and
-              # off arm64/small nodes.
+              # Keep off the GPU box (Plex/Frigate/ollama live there), off
+              # arm64/small nodes, and off control-plane nodes -- the prod
+              # master is untainted and an encode at 8 cores starves
+              # etcd/apiserver (happened 2026-07-15, master hit 98% CPU).
               - matchExpressions:
                   - key: gpu
                     operator: NotIn
@@ -228,6 +230,8 @@ spec:
                   - key: kubernetes.io/arch
                     operator: In
                     values: ["amd64"]
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
         - name: worker
           image: docker.io/linuxserver/ffmpeg:latest
