@@ -1,0 +1,232 @@
+# media-reencode: standing worker that shrinks fat H.264/legacy video to x265.
+#
+# Scope (agreed 2026-07-15): TV episodes + top-fat movies only. Home videos
+# are deliberately EXCLUDED (irreplaceable originals; sections 9/10 never
+# queried). The worker asks Plex's API for candidates, so no media filenames
+# live in this repo; needs the out-of-band `media-reencode-secrets` Secret
+# (template in README).
+#
+# Safety model: encode to a temp file on the same share, verify (duration
+# match, decodable head+tail, output strictly smaller), only then replace the
+# original. State/locks live on the NFS share under /media/.reencode -- pod
+# restarts resume where they left off; lock dirs make >1 replica safe.
+# Touch /media/.reencode/pause to pause the worker between files.
+---
+# RW view of the same Unraid export Plex mounts read-only as plex-media.
+# Mounted at /media so Plex API file paths are valid verbatim.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-reencode-media-pv
+spec:
+  capacity:
+    storage: 10Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranMedia
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-reencode-media
+  namespace: media-reencode
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: media-reencode-media-pv
+  resources:
+    requests:
+      storage: 10Ti
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-reencode-script
+  namespace: media-reencode
+data:
+  reencode.sh: |
+    #!/bin/bash
+    # Candidate selection mirrors the 2026-07-15 library review:
+    #   movies (sec 3): legacy codec and >= 9500 kbps  (the ~10 fattest)
+    #   tv     (sec 4): legacy codec and > 8000 kbps, or > 5000 at 720p,
+    #                   or > 3000 at SD
+    set -u
+    STATE=/media/.reencode
+    mkdir -p "$STATE/locks" "$STATE/tmp"
+    DONE="$STATE/done.log"; SKIP="$STATE/skip.log"; FAIL="$STATE/fail.log"
+    touch "$DONE" "$SKIP" "$FAIL"
+    log(){ echo "[$(date '+%F %T')] $*"; }
+    mark(){ echo "$2" >> "$1"; }
+    listed(){ grep -qxF -- "$1" "$DONE" "$SKIP" "$FAIL" 2>/dev/null; }
+
+    fetch_candidates(){ # emits: size|kind|path   (sorted biggest-first)
+      local s kind type start total page
+      for s in 3 4; do
+        if [ "$s" = 3 ]; then kind=movie type=""; else kind=tv type="type=4&"; fi
+        start=0; total=1
+        while [ "$start" -lt "$total" ]; do
+          page=$(curl -fsS -H "Accept: application/json" \
+            "$PLEX_URL/library/sections/$s/all?${type}X-Plex-Container-Start=$start&X-Plex-Container-Size=1000&X-Plex-Token=$PLEX_TOKEN") || return 1
+          total=$(echo "$page" | jq -r '.MediaContainer.totalSize // .MediaContainer.size // 0'); total=${total:-0}
+          echo "$page" | jq -r --arg kind "$kind" '
+            .MediaContainer.Metadata[]?
+            | .Media[0] as $m | $m.Part[0] as $p
+            | select($m.videoCodec | IN("h264","mpeg2video","mpeg4","msmpeg4v3","vc1"))
+            | (($m.bitrate // 0)) as $br | (($m.height // 0)) as $h
+            | ((if $h >= 900 then 8000 elif $h >= 640 then 5000 else 3000 end)) as $tvmin
+            | select( ($kind == "movie" and $br >= 9500)
+                   or ($kind == "tv"    and $br > $tvmin) )
+            | "\($p.size // 0)|\($kind)|\($p.file)"'
+          start=$((start + 1000))
+        done
+      done | sort -t'|' -k1,1 -rn
+    }
+
+    probe(){ ffprobe -v error -show_entries "$2" -of default=nw=1:nk=1 "$1" 2>/dev/null | head -1; }
+    vprobe(){ ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1 "$1" 2>/dev/null | head -1; }
+
+    encode_one(){ # $1 kind, $2 src
+      local kind="$1" src="$2" crf preset sec tmp dst sdur odur diff lim vcodec ssz osz subs firstsub
+      if [ "$kind" = movie ]; then crf=20 preset=slow sec=3; else crf=23 preset=medium sec=4; fi
+      [ -f "$src" ] || { log "MISSING $src"; mark "$SKIP" "$src"; return; }
+      vcodec=$(vprobe "$src")
+      case "$vcodec" in hevc|av1|vp9) log "ALREADY-MODERN($vcodec) $src"; mark "$SKIP" "$src"; return;; esac
+      sdur=$(probe "$src" "format=duration"); sdur=${sdur%.*}
+      case "$sdur" in ''|*[!0-9]*) log "NO-DURATION $src"; mark "$SKIP" "$src"; return;; esac
+      ssz=$(stat -c%s -- "$src")
+      tmp="$STATE/tmp/$(echo -n "$src" | md5sum | cut -d' ' -f1).mkv"
+      rm -f -- "$tmp"
+      log "ENCODE [$kind crf=$crf $preset] $src ($((ssz/1024/1024)) MB)"
+      local common=(-y -nostdin -hide_banner -loglevel error -i "$src"
+        -map 0:V:0 -map 0:a? -c:v libx265 -preset "$preset" -crf "$crf"
+        -pix_fmt yuv420p10le -vf "yadif=deint=interlaced"
+        -x265-params log-level=error -c:a copy)
+      # mov_text subs can't be copied into mkv; anything else copies fine
+      subs=$(ffprobe -v error -select_streams s -show_entries stream=codec_name -of default=nw=1:nk=1 "$src" 2>/dev/null)
+      case "$subs" in *mov_text*) firstsub=srt;; *) firstsub=copy;; esac
+      nice -n 10 ffmpeg "${common[@]}" -map 0:s? -c:s "$firstsub" "$tmp" 2>"$STATE/tmp/err" \
+        || nice -n 10 ffmpeg "${common[@]}" -sn "$tmp" 2>>"$STATE/tmp/err" \
+        || { log "FFMPEG-FAIL $src: $(tail -2 "$STATE/tmp/err")"; mark "$FAIL" "$src"; rm -f -- "$tmp"; return; }
+      # verify: duration, decodable head+tail, strictly smaller
+      odur=$(probe "$tmp" "format=duration"); odur=${odur%.*}
+      diff=$(( sdur > odur ? sdur - odur : odur - sdur )); lim=$(( sdur / 50 + 5 ))
+      if [ "$diff" -gt "$lim" ]; then
+        log "VERIFY-FAIL duration src=${sdur}s out=${odur}s $src"; mark "$FAIL" "$src"; rm -f -- "$tmp"; return; fi
+      if ! ffmpeg -v error -xerror -i "$tmp" -t 20 -f null - 2>/dev/null \
+      || ! ffmpeg -v error -xerror -ss $((odur > 40 ? odur - 30 : 0)) -i "$tmp" -t 20 -f null - 2>/dev/null; then
+        log "VERIFY-FAIL decode $src"; mark "$FAIL" "$src"; rm -f -- "$tmp"; return; fi
+      osz=$(stat -c%s -- "$tmp")
+      if [ "$osz" -ge "$ssz" ]; then
+        log "NOT-SMALLER ($((osz/1024/1024)) MB) $src"; mark "$SKIP" "$src"; rm -f -- "$tmp"; return; fi
+      # replace, never leaving a moment without a valid file: same-name mkv
+      # is an atomic rename-over; otherwise land the new file first, then rm
+      dst="${src%.*}.mkv"
+      if [ "$dst" = "$src" ]; then
+        mv -f -- "$tmp" "$dst" || { log "REPLACE-FAIL $src"; mark "$FAIL" "$src"; return; }
+      else
+        mv -f -- "$tmp" "$dst" || { log "REPLACE-FAIL $src"; mark "$FAIL" "$src"; rm -f -- "$tmp"; return; }
+        rm -f -- "$src"
+      fi
+      log "DONE saved $(( (ssz-osz)/1024/1024 )) MB ($((osz*100/ssz))% of original) $dst"
+      mark "$DONE" "$src"
+      # partial Plex rescan of just this directory
+      curl -fsS -o /dev/null "$PLEX_URL/library/sections/$sec/refresh?path=$(printf '%s' "$(dirname "$src")" | jq -sRr @uri)&X-Plex-Token=$PLEX_TOKEN" || true
+    }
+
+    log "media-reencode worker starting (PLEX_URL=$PLEX_URL)"
+    # clear crash leftovers -- safe at replicas=1; if scaling out, move this
+    # cleanup elsewhere so one pod's start doesn't clear another's lock
+    rm -f "$STATE"/tmp/*.mkv 2>/dev/null
+    rm -rf "$STATE"/locks/* 2>/dev/null
+    while true; do
+      n=0
+      while IFS='|' read -r _sz kind src; do
+        [ -n "$src" ] || continue
+        case "$src" in /media/*) ;; *) continue;; esac
+        listed "$src" && continue
+        while [ -f "$STATE/pause" ]; do log "paused"; sleep 300; done
+        lock="$STATE/locks/$(echo -n "$src" | md5sum | cut -d' ' -f1)"
+        mkdir "$lock" 2>/dev/null || continue
+        encode_one "$kind" "$src"
+        rmdir "$lock" 2>/dev/null
+        n=$((n+1))
+      done < <(fetch_candidates)
+      log "pass complete ($n processed); sleeping 6h before re-checking library"
+      sleep 21600
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-reencode
+  namespace: media-reencode
+  labels:
+    app: media-reencode
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: media-reencode
+  template:
+    metadata:
+      labels:
+        app: media-reencode
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              # Keep off the GPU box (Plex/Frigate/ollama live there) and
+              # off arm64/small nodes.
+              - matchExpressions:
+                  - key: gpu
+                    operator: NotIn
+                    values: ["true"]
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: ["amd64"]
+      containers:
+        - name: worker
+          image: docker.io/linuxserver/ffmpeg:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/reencode.sh"]
+          env:
+            - name: PLEX_URL
+              value: "http://plex.plex.svc.cluster.local:32400"
+            - name: PLEX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: media-reencode-secrets
+                  key: PLEX_TOKEN
+          resources:
+            requests:
+              cpu: "2"
+              memory: "1Gi"
+            limits:
+              cpu: "8"
+              memory: "4Gi"
+          volumeMounts:
+            - name: media
+              mountPath: /media
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media-reencode-media
+        - name: scripts
+          configMap:
+            name: media-reencode-script
