@@ -74,10 +74,19 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: shm
+              mountPath: /dev/shm
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: postgis-data
+        # Default /dev/shm is 64Mi; parallel PostGIS queries overflow it
+        # ("could not resize shared memory segment"). tmpfs counts against
+        # the container's 2Gi memory limit.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service
