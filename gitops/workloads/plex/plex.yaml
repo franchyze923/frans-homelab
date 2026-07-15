@@ -243,6 +243,8 @@ spec:
             - name: familymedia
               mountPath: /familymedia
               readOnly: true
+            - name: transcode
+              mountPath: /transcode
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -259,6 +261,14 @@ spec:
         - name: config-backup
           persistentVolumeClaim:
             claimName: plex-config-backup
+        # RAM-backed transcode scratch: keeps transcode segment churn off the
+        # Ceph config PVC. Counts against the container's 16Gi memory limit;
+        # kubelet evicts the pod if usage exceeds sizeLimit. Requires Plex
+        # setting Transcoder > "Transcoder temporary directory" = /transcode.
+        - name: transcode
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
 ---
 # CronJob: backup Plex config from Ceph to NFS every 6 hours
 apiVersion: batch/v1
