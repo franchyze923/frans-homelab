@@ -69,6 +69,29 @@ data:
     mark(){ echo "$2" >> "$1"; }
     listed(){ grep -qxF -- "$1" "$DONE" "$SKIP" "$FAIL" 2>/dev/null; }
 
+    # Multi-replica coordination: locks are claimed with mkdir (atomic on
+    # NFS), stamped with an owner, and kept fresh by a background heartbeat.
+    # A lock untouched for >15 min belongs to a dead pod and may be taken.
+    heartbeat(){
+      while true; do
+        for d in "$STATE"/locks/*/; do
+          [ -f "$d/owner" ] && [ "$(cat "$d/owner" 2>/dev/null)" = "$HOSTNAME" ] && touch "$d"
+        done 2>/dev/null
+        sleep 60
+      done
+    }
+    claim(){ # $1 lock dir; returns 0 if we own it
+      if mkdir "$1" 2>/dev/null; then echo "$HOSTNAME" > "$1/owner"; return 0; fi
+      local mt now
+      mt=$(stat -c %Y "$1" 2>/dev/null) || return 1
+      now=$(date +%s)
+      [ $((now - mt)) -gt 900 ] || return 1
+      log "taking over stale lock $(basename "$1")"
+      rm -rf "$1" 2>/dev/null
+      mkdir "$1" 2>/dev/null || return 1
+      echo "$HOSTNAME" > "$1/owner"
+    }
+
     fetch_candidates(){ # emits: size|kind|path   (sorted biggest-first)
       local s kind type start total page
       for s in 3 4; do
@@ -97,7 +120,7 @@ data:
 
     encode_one(){ # $1 kind, $2 src
       local kind="$1" src="$2" crf preset sec tmp dst sdur odur diff lim vcodec ssz osz subs firstsub
-      if [ "$kind" = movie ]; then crf=20 preset=slow sec=3; else crf=23 preset=medium sec=4; fi
+      if [ "$kind" = movie ]; then crf=20 preset=slow sec=3; else crf=23 preset=fast sec=4; fi
       [ -f "$src" ] || { log "MISSING $src"; mark "$SKIP" "$src"; return; }
       vcodec=$(vprobe "$src")
       case "$vcodec" in hevc|av1|vp9) log "ALREADY-MODERN($vcodec) $src"; mark "$SKIP" "$src"; return;; esac
@@ -143,11 +166,11 @@ data:
       curl -fsS -o /dev/null "$PLEX_URL/library/sections/$sec/refresh?path=$(printf '%s' "$(dirname "$src")" | jq -sRr @uri)&X-Plex-Token=$PLEX_TOKEN" || true
     }
 
-    log "media-reencode worker starting (PLEX_URL=$PLEX_URL)"
-    # clear crash leftovers -- safe at replicas=1; if scaling out, move this
-    # cleanup elsewhere so one pod's start doesn't clear another's lock
-    rm -f "$STATE"/tmp/*.mkv 2>/dev/null
-    rm -rf "$STATE"/locks/* 2>/dev/null
+    log "media-reencode worker starting on $HOSTNAME (PLEX_URL=$PLEX_URL)"
+    # No startup cleanup: other replicas' locks/tmp must survive our restart.
+    # Orphaned tmp files self-heal -- encode_one truncates its tmp before use,
+    # and a crashed file stays a candidate until done/skip/fail.
+    heartbeat &
     while true; do
       n=0
       while IFS='|' read -r _sz kind src; do
@@ -156,9 +179,9 @@ data:
         listed "$src" && continue
         while [ -f "$STATE/pause" ]; do log "paused"; sleep 300; done
         lock="$STATE/locks/$(echo -n "$src" | md5sum | cut -d' ' -f1)"
-        mkdir "$lock" 2>/dev/null || continue
+        claim "$lock" || continue
         encode_one "$kind" "$src"
-        rmdir "$lock" 2>/dev/null
+        rm -rf "$lock" 2>/dev/null
         n=$((n+1))
       done < <(fetch_candidates)
       log "pass complete ($n processed); sleeping 6h before re-checking library"
@@ -173,7 +196,9 @@ metadata:
   labels:
     app: media-reencode
 spec:
-  replicas: 1
+  # NFS lock dirs + heartbeat make replicas safe; anti-affinity guarantees
+  # one worker per node so they don't contend for the same cores.
+  replicas: 3
   strategy:
     type: Recreate
   selector:
@@ -185,6 +210,12 @@ spec:
         app: media-reencode
     spec:
       affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: media-reencode
+              topologyKey: kubernetes.io/hostname
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:

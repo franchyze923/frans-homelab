@@ -7,7 +7,8 @@ movies, expected to shrink to roughly half.
 
 ## Scope — what it will and won't touch
 - **TV episodes** (Plex section 4): legacy codec AND bitrate > 8 Mbps
-  (1080p+), > 5 Mbps (720p), or > 3 Mbps (SD). CRF 23, preset medium.
+  (1080p+), > 5 Mbps (720p), or > 3 Mbps (SD). CRF 23, preset fast
+  (~35% quicker than medium for ~5% larger output — right trade for TV).
 - **Movies** (section 3): legacy codec AND ≥ 9.5 Mbps — only the fattest.
   CRF 20, preset slow (higher quality bar).
 - **Never**: home videos / other sections (irreplaceable originals — decided
@@ -29,9 +30,11 @@ rescan and watch state survives.
 4. Trigger a partial Plex scan of just that directory.
 
 State lives on the share in `/media/.reencode/` (`done.log`, `skip.log`,
-`fail.log`) — pod restarts resume where they left off. Lock dirs make
-multiple replicas safe, but startup cleanup assumes `replicas: 1`; read the
-script comment before scaling out.
+`fail.log`) — pod restarts resume where they left off. Replicas coordinate
+via lock dirs on the share: `mkdir` is the atomic claim, a background
+heartbeat touches owned locks every 60s, and a lock untouched for 15 min is
+treated as a dead pod's and taken over. Scale with `replicas:` freely;
+pod anti-affinity pins one worker per node.
 
 ## Operations
 - **Pause**: `touch /media/.reencode/pause` (checked between files);
@@ -43,10 +46,10 @@ script comment before scaling out.
 - **Script changes**: the ConfigMap updates in place but the running pod
   keeps the old script — `kubectl rollout restart deploy/media-reencode
   -n media-reencode` after sync.
-- Runs on any amd64 non-GPU node (nodeAffinity keeps it off the GPU box so
-  it never competes with Plex/Frigate/ollama). Requests 2 CPU, capped at 8.
-  Expect the TV backlog to take **weeks** — that's by design; it's a
-  background grind, not a race.
+- Runs on amd64 non-GPU nodes (nodeAffinity keeps it off the GPU box so
+  it never competes with Plex/Frigate/ollama). 3 replicas, one per node,
+  each requesting 2 CPU / capped at 8. Estimated **~10–14 days** for the
+  initial TV backlog; still a polite background grind per node.
 
 ## Secret (out-of-band, NOT in git)
 `media-reencode-secrets` carries the Plex token the worker uses to query the
