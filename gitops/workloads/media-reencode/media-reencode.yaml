@@ -204,7 +204,10 @@ metadata:
 spec:
   # NFS lock dirs + heartbeat make replicas safe; anti-affinity guarantees
   # one worker per node so they don't contend for the same cores.
-  replicas: 3
+  # 2026-07-16: scaled 3 -> 1 and pinned to the Ryzen desktop node. The two
+  # pve-VM workers (Xeon E5-2660v2) measured ~10-20% of fleet throughput for
+  # ~80-100 W continuous -- ~20x worse energy per movie than the M1.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -230,6 +233,9 @@ spec:
               # master is untainted and an encode at 8 cores starves
               # etcd/apiserver (happened 2026-07-15, master hit 98% CPU).
               - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["ubuntu-26-desktop-node"]
                   - key: gpu
                     operator: NotIn
                     values: ["true"]
