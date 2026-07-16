@@ -271,3 +271,67 @@ spec:
         - name: scripts
           configMap:
             name: media-reencode-script
+---
+# Separate Deployment for the tainted arm64 Mac M1 node (same script/locks,
+# so it cooperates with the amd64 fleet). Kept separate on purpose: the M1
+# node only has ~5.3Gi allocatable, so it gets a smaller memory envelope,
+# and template changes here don't restart the amd64 workers mid-encode.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-reencode-arm
+  namespace: media-reencode
+  labels:
+    app: media-reencode-arm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: media-reencode-arm
+  template:
+    metadata:
+      labels:
+        app: media-reencode-arm
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      tolerations:
+        - key: arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: docker.io/linuxserver/ffmpeg:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/reencode.sh"]
+          env:
+            - name: PLEX_URL
+              value: "http://plex.plex.svc.cluster.local:32400"
+            - name: PLEX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: media-reencode-secrets
+                  key: PLEX_TOKEN
+          resources:
+            requests:
+              cpu: "2"
+              memory: "1Gi"
+            limits:
+              cpu: "6"
+              memory: "3Gi"
+          volumeMounts:
+            - name: media
+              mountPath: /media
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media-reencode-media
+        - name: scripts
+          configMap:
+            name: media-reencode-script
