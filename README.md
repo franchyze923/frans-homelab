@@ -30,7 +30,7 @@ frans-homelab/
 
 ### Physical hosts
 
-The four bare-metal machines (Kubernetes nodes are **VMs on top of these** — see the next table). Inventoried live over SSH, 2026-06-29.
+Five bare-metal machines. The first four carry the cluster — Kubernetes nodes are **VMs on top of them** (see the next table). The fifth (`fran-lenovo-rocky-9`) is the standalone devbox and is **not part of the cluster**. Inventoried live over SSH, 2026-06-29; devbox added 2026-07-16.
 
 #### `pve` — Dell PowerEdge R720 · `192.168.40.10`
 Primary Proxmox host — runs master-1, the Rocky workers, and the M1 VM.
@@ -75,6 +75,17 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
   SAS HBA: boot-pool (s/n `21120225603051`) and `VM_Pool`
   (s/n `22082325601847`, fw SBFM61.5, 88% life — hosts master-3's 40 G zvol;
   reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
+
+#### `fran-lenovo-rocky-9` — Lenovo ThinkCentre M710q (10MR0004US) · `192.168.40.192`
+Devbox / workstation (`fsp` in SSH config) — **not a cluster member**, deliberately
+(2026-07-16): only 4 threads and it's the interactive dev machine, so joining it
+would couple the workspace to cluster scheduling for ~5% more capacity. Kaby Lake
+has AVX2, so per-core it actually out-encodes the R720's Ivy Bridge Xeons at 35 W.
+
+- **CPU:** i5-7500T — 4c / 4t @ 2.7–3.3 GHz (Kaby Lake, 35 W)
+- **RAM:** 16 GB DDR4, 15 GiB usable (layout not enumerated — no passwordless sudo; 2 SODIMM slots, max 32 GB)
+- **OS:** Rocky Linux 9.8 (kernel 5.14.0-611.5.1.el9_7)
+- **Storage:** 256 GB Samsung PM981 NVMe (`MZVLB256HAHQ`) — OS only, no spare disk for Ceph
 
 ### Kubernetes nodes (VMs)
 
