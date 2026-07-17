@@ -237,9 +237,11 @@ spec:
             - name: media
               mountPath: /media
               readOnly: true
+            # TEMPORARY (2026-07-17): rw so the Wedding "Optimize" run can write
+            # its "Plex Versions" folders next to the originals. Revert to
+            # readOnly: true when the run completes.
             - name: homemedia
               mountPath: /homemedia
-              readOnly: true
             - name: familymedia
               mountPath: /familymedia
               readOnly: true
