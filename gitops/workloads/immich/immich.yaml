@@ -340,7 +340,7 @@ spec:
         gpu: "true"
       containers:
         - name: immich-machine-learning
-          image: ghcr.io/immich-app/immich-machine-learning:v3.0.1-cuda
+          image: ghcr.io/immich-app/immich-machine-learning:v3.0.3-cuda
           env:
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "compute,utility"
@@ -439,7 +439,7 @@ spec:
           tolerationSeconds: 60
       containers:
         - name: immich-server
-          image: ghcr.io/immich-app/immich-server:v3.0.1
+          image: ghcr.io/immich-app/immich-server:v3.0.3
           env:
             - name: DB_HOSTNAME
               value: immich-postgres

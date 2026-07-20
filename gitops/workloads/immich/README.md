@@ -214,6 +214,6 @@ deployment). Tune `WINDOW`/`THRESHOLD` via the CronJob env.
 ## Notes
 - Machine-learning URL defaults to `http://immich-machine-learning:3003` — the
   service is named to match, so no extra config needed.
-- Image versions are pinned to `v3.0.1`; bump server + ML together when upgrading
+- Image versions are pinned to `v3.0.3`; bump server + ML together when upgrading
   (and check the release notes for DB image changes). The Postgres/VectorChord
   image tag is independent and only needs bumping if Immich's docs call for it.
