@@ -10,7 +10,8 @@
 # match, decodable head+tail, output strictly smaller), only then replace the
 # original. State/locks live on the NFS share under /media/.reencode -- pod
 # restarts resume where they left off; lock dirs make >1 replica safe.
-# Touch /media/.reencode/pause to pause the worker between files.
+# Touch /media/.reencode/pause to pause the worker between files (or just
+# run ./toggle.sh {on,off,status} from this directory).
 ---
 # RW view of the same Unraid export Plex mounts read-only as plex-media.
 # Mounted at /media so Plex API file paths are valid verbatim.

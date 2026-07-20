@@ -37,9 +37,12 @@ treated as a dead pod's and taken over. Scale with `replicas:` freely;
 pod anti-affinity pins one worker per node.
 
 ## Operations
-- **Pause**: `touch /media/.reencode/pause` (checked between files);
-  `rm` it to resume. From any pod with the share mounted, or Unraid itself
-  (`/mnt/user/FranData/FranMedia/.reencode/pause`).
+- **Pause/resume**: `./toggle.sh off` / `./toggle.sh on` / `./toggle.sh status`.
+  Wraps `kubectl exec` to touch/remove `/media/.reencode/pause` on whichever
+  worker pod is running -- checked between files, so a pause finishes the
+  file currently encoding before the worker idles. Equivalent by hand:
+  `touch /media/.reencode/pause` (`rm` to resume) from any pod with the
+  share mounted, or Unraid itself (`/mnt/user/FranData/FranMedia/.reencode/pause`).
 - **Progress**: `kubectl logs -n media-reencode deploy/media-reencode`
   — one `DONE saved <n> MB` line per file — or `wc -l done.log`.
 - **Re-queue a failed file**: remove its line from `fail.log`.
