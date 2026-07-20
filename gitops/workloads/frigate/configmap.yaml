@@ -80,6 +80,7 @@ data:
       # are normalized 0-1 (x,y pairs), eyeballed from a snapshot -- refine in
       # the UI zone editor and copy back here (UI edits don't persist).
       reolink_2:
+        enabled: false
         ffmpeg:
           inputs:
             - path: rtsp://127.0.0.1:8554/reolink_2
