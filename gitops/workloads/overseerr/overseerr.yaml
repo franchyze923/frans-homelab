@@ -71,6 +71,15 @@ spec:
       labels:
         app: overseerr
     spec:
+      # Seerr (the Overseerr/Jellyseerr merger, 2026-02) drops the
+      # linuxserver.io PUID/PGID image for an official one that runs
+      # as a fixed non-root `node` user (uid 1000) -- fsGroup/runAsUser
+      # replace what PUID/PGID used to handle. Config dir was already
+      # uid 1000 from the old linuxserver image, so no chown needed.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       initContainers:
         - name: restore-config
           image: busybox:latest
@@ -83,12 +92,8 @@ spec:
               readOnly: true
       containers:
         - name: overseerr
-          image: lscr.io/linuxserver/overseerr:latest
+          image: ghcr.io/seerr-team/seerr:latest
           env:
-            - name: PUID
-              value: "1000"
-            - name: PGID
-              value: "1000"
             - name: TZ
               value: "America/New_York"
           ports:
@@ -103,7 +108,7 @@ spec:
               cpu: "500m"
           volumeMounts:
             - name: config
-              mountPath: /config
+              mountPath: /app/config
       volumes:
         - name: config
           persistentVolumeClaim:
