@@ -101,12 +101,12 @@ kubeconfigs, kubelets, and Cilium):
 | `k8s-cp-truenas-node` | amd64 | `truenas` VM (`.249`, 2 vCPU / 8 GiB / 50 GiB, on `VM_Pool` SSD) | Control plane 3/3 + Ceph OSD (135 G zvol) + mon `e` |
 | worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers (worker-1 also carries a Ceph OSD on the NVMe) |
 | `ubuntu24-gpu-box` | amd64 | `pve` (R720), **Tesla P4** (GPU passthrough), 20 vCPU (raised from 12, 2026-07-21) | GPU workloads (Plex, ollama, Frigate, Immich-ML, nvidia-gpu-exporter) |
-| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.76`, 10 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04), **AMD Radeon RX 570** (GPU passthrough, added 2026-07-21) | Worker + XFCE desktop + mon `d` |
+| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.76`, 10 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
 | `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
 
 **GPU — Tesla P4:** 8 GB GDDR5, 2,560 CUDA cores (Pascal), 75 W single-slot, NVENC/NVDEC (incl. HEVC Main10/10-bit encode). **Time-sliced** (5 replicas, raised from 4 on 2026-07-21 to fit `nvidia-gpu-exporter`) so Plex + ollama + Frigate + Immich-ML + the exporter share it; consumers pinned with `nodeSelector: gpu=true`.
 
-**GPU — AMD Radeon RX 570** (`ubuntu-26-desktop-node`): 4 GB GDDR5, Polaris/VCE 3.4, VA-API encode+decode. Passed through 2026-07-21 as an alternative to sharing the P4, but VCE 3.4 has **no HEVC Main10 (10-bit) encode entrypoint** -- confirmed with [`gitops/scripts/gpu-transcode-bench.sh`](gitops/scripts/README.md) -- and the media-reencode worker's whole library is 10-bit HEVC, so every HEVC-target transcode (e.g. Apple TV) silently fell back to full CPU software encode. Plex moved back to the P4 the same day. The RX 570 stays installed/passed-through (`generic-device-plugin`, `devic.es/dri`) but idle -- it's genuinely faster than the P4 for H264-target encodes if a future workload only needs that.
+**GPU — AMD Radeon RX 570** (removed 2026-07-21, same day it went in): briefly passed through to `ubuntu-26-desktop-node` as an alternative to sharing the P4, but VCE 3.4 has **no HEVC Main10 (10-bit) encode entrypoint** -- confirmed with [`gitops/scripts/gpu-transcode-bench.sh`](gitops/scripts/README.md) -- and the media-reencode worker's whole library is 10-bit HEVC, so every HEVC-target transcode (e.g. Apple TV) silently fell back to full CPU software encode. Plex moved back to the P4 the same day; no other current workload (Jellyfin was considered) justified keeping a second GPU powered on, so `hostpci0` was removed from VM 100 and the card physically pulled to save power. `generic-device-plugin` (only ever used for this card) removed from git along with it.
 
 ### Storage
 

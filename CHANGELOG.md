@@ -81,6 +81,16 @@ Raised the device-plugin's time-slicing 4 → 5 replicas so the exporter's
 own `nvidia.com/gpu` request didn't compete with frigate/immich-ml/
 ollama/plex, which already claimed all 4 existing slices.
 
+### AMD RX 570 removed (same day it went in) — power, not worth it
+Considered giving the idle RX 570 to Jellyfin (currently has zero GPU
+acceleration) since it's a separate card from the P4 with no contention.
+Decided against it — not worth keeping a second GPU powered on for that.
+Removed `hostpci0` from VM 100, stop/start cycle to cleanly release the
+device back to the host, confirmed `/dev/dri/renderD128` gone from the
+guest before the physical unplug. Deleted `generic-device-plugin`
+(`gitops/apps` + `gitops/workloads`) from git — it only ever existed for
+this card, and ArgoCD's `prune: true` took the DaemonSet down with it.
+
 ### Cluster: `ubuntu24-gpu-box` CPU 12 → 20 vCPU
 Proxmox-side change (not git-tracked) to give frigate/immich-ml/ollama
 more headroom now that Plex's own CPU needs are well understood. Caused
