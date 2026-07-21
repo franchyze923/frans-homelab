@@ -67,4 +67,53 @@ The tool uses a three-tier matching strategy for each track:
 2. **Normalized filename** — normalizes unicode (e.g. fullwidth `＂` → `"`) and compares filenames case-insensitively
 3. **Stripped filename** — removes all special characters and compares alphanumeric content only
 
+---
+
+# GPU Transcode Benchmark
+
+`gpu-transcode-bench.sh` — A/B tests real hardware transcode performance
+(NVENC vs VAAPI, or any future card) against the *same* source clip. Built
+2026-07-21 comparing the Tesla P4 (`ubuntu24-gpu-box`) against the RX 570
+(`ubuntu-26-desktop-node`) after finding the RX 570 can't hardware-encode
+10-bit HEVC (Polaris VCE lacks a `VAProfileHEVCMain10` encode entrypoint —
+decode-only). Reusable for testing any future card swap (e.g. the 1050 Ti).
+
+Runs two tests — HEVC 10-bit target and H264 target — each fully
+hardware-accelerated (decode + scale + encode all on the GPU, no CPU
+fallback), reporting wall-clock time, ffmpeg's own reported speed, and
+peak GPU utilization sampled during the run. Output is discarded
+(`-f null`) so disk I/O isn't a variable.
+
+## Usage
+
+Copy to the target host directly (it needs local `ffmpeg` with the
+relevant hwaccel built in, plus `nvidia-smi` for NVENC or a `/sys/class/drm`
+render node for VAAPI) and run in place -- this isn't meant to run
+centrally against a remote GPU:
+
+```sh
+scp gpu-transcode-bench.sh someuser@target-host:/tmp/
+ssh someuser@target-host '/tmp/gpu-transcode-bench.sh nvenc /tmp/sample.mkv'   # Nvidia
+ssh someuser@target-host '/tmp/gpu-transcode-bench.sh vaapi /tmp/sample.mkv'   # AMD/Intel VAAPI
+```
+
+Use a real representative source clip (same file on both hosts for a fair
+comparison) -- a ~90s extract via `ffmpeg -ss <offset> -i src.mkv -t 90
+-c copy sample.mkv` from an actual library file avoids synthetic-content
+bias and keeps each test run under a minute.
+
+## Results so far (2026-07-21)
+
+| Test | Tesla P4 (NVENC) | RX 570 (VAAPI) |
+|---|---|---|
+| HEVC 10-bit target | OK, ~2x speed, ~25% GPU util | **Fails instantly** -- no HEVC Main10 encode entrypoint |
+| H264 target | OK, ~2x speed, ~23% GPU util | OK, **~3.7x speed**, ~53% GPU util |
+
+Takeaway: the P4 is the only one of the two that can do everything: it's
+the only card capable of hardware-encoding your 10-bit HEVC (reencoded)
+library at all. But for content that *does* transcode to H264 (the more
+common case for most non-Apple-TV clients), the RX 570 is faster. Neither
+card is a strict upgrade over the other for this workload -- capability
+coverage and raw speed favor different cards.
+
 If a playlist already exists on the destination, the tool will only add missing tracks (no duplicates).
