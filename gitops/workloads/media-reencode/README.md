@@ -37,6 +37,10 @@ treated as a dead pod's and taken over. Scale with `replicas:` freely;
 pod anti-affinity pins one worker per node.
 
 ## Operations
+- **Nodes**: M1-only as of 2026-07-21 (power reasons) -- the amd64
+  Deployment (`media-reencode`, desktop-node) is scaled to `replicas: 0`;
+  `media-reencode-arm` (M1) is the only active worker. Bump the amd64
+  Deployment back to `replicas: 1` to resume multi-node encoding.
 - **Pause/resume**: `./toggle.sh off` / `./toggle.sh on` / `./toggle.sh status`.
   Wraps `kubectl exec` to touch/remove `/media/.reencode/pause` on whichever
   worker pod is running -- checked between files, so a pause finishes the

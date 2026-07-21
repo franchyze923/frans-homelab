@@ -208,7 +208,10 @@ spec:
   # 2026-07-16: scaled 3 -> 1 and pinned to the Ryzen desktop node. The two
   # pve-VM workers (Xeon E5-2660v2) measured ~10-20% of fleet throughput for
   # ~80-100 W continuous -- ~20x worse energy per movie than the M1.
-  replicas: 1
+  # 2026-07-21: scaled to 0 -- M1-only for power reasons (also frees up
+  # desktop-node's CPU/power headroom while it takes on Plex + GPU passthrough).
+  # Revert to 1 to bring this worker back.
+  replicas: 0
   strategy:
     type: Recreate
   selector:
