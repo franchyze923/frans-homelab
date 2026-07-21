@@ -4,6 +4,91 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-21
+
+### media-reencode: restored app, added toggle.sh, scaled to M1-only
+`gitops/apps/media-reencode.yaml` had been deleted from git 2026-07-18 to
+temporarily disable the worker — restored it. Added `toggle.sh` (pause/
+resume via the existing `STATE/pause` flag over `kubectl exec`) so pausing
+no longer means deleting the whole Application and waiting on a resync.
+Later in the day, scaled the amd64 (desktop-node) Deployment to
+`replicas: 0` for power reasons — M1-only for now, reversible.
+
+### New: Overseerr (`gitops/workloads/overseerr`), migrated to Seerr same day
+Deployed on the standard single-container pattern. Same day, Overseerr
+displayed an in-app notice that it and Jellyseerr had merged into a new
+project, **Seerr** — migrated immediately: new image
+(`ghcr.io/seerr-team/seerr`), config path `/config` → `/app/config`,
+dropped linuxserver.io `PUID`/`PGID` for a pod `securityContext` (the
+official image runs as a fixed non-root `node` user). No manual data
+migration — Seerr's own migrator ran against the existing config on first
+boot. See `gitops/workloads/overseerr/README.md`.
+
+### Immich: v3.0.1 → v3.0.3
+Two patch releases, no breaking changes or DB/extension bumps (checked
+release notes first). Bumped `immich-server` + `immich-machine-learning`
+together, per the existing pin-both-together rule. Manual DB backup taken
+immediately before.
+
+### Frigate: disabled `reolink_2` (basement workout-detection cam)
+Camera-level `enabled: false` — stops detect/record/snapshots while
+keeping the zone/alert config in place for re-enabling later.
+
+### Plex buffering incident: root-caused to CPU throttling, not GPU
+A real buffering report ("last night, ~8:30-9:30pm ET") was traced via
+Prometheus (`container_cpu_cfs_throttled_seconds_total`) to CFS throttling
+— up to 83% of the time in some 5-minute windows — while the Tesla P4
+itself sat at ~20% NVENC/NVDEC utilization the whole time. Kubernetes
+enforces CPU *limits* over ~100ms windows, so a bursty transcoder can get
+throttled on brief spikes even when the 5-minute average usage looks
+fine — the actual lesson here, not specific to Plex. CPU limit raised
+6 → 10 (later 10 → 14, see below). Built a **Plex Transcoding** Grafana
+dashboard (CPU used/throttled %, later GPU util) specifically so this
+shows up on a graph next time instead of getting reconstructed from logs
+after the fact.
+
+### GPU passthrough: AMD RX 570 added to `ubuntu-26-desktop-node`, Plex moved there, then moved back
+Physically reseated an RX 570 into the Ryzen host (`fran@192.168.40.9`) —
+vfio-pci binding and IOMMU group were already configured from a prior
+attempt, just needed the card back in, `hostpci0` added to VM 100, and a
+stop/start cycle. `generic-device-plugin` (already deployed, already
+configured for this exact card) picked it up automatically as
+`devic.es/dri`. Moved Plex there for a dedicated non-shared GPU.
+
+Turned out the RX 570 (Polaris/VCE 3.4) has no `VAProfileHEVCMain10`
+(10-bit HEVC) *encode* entrypoint — decode-only — and the media-reencode
+worker's whole library is 10-bit HEVC, so every HEVC-target transcode
+(Apple TV, etc.) was silently falling back to full CPU software encode.
+Confirmed independently of Plex with the new `gpu-transcode-bench.sh`
+tool (see below), which also found the RX 570 is genuinely *faster* than
+the P4 for H264-target encodes when it can use hardware at all — not a
+strict downgrade, just wrong for this specific library. Moved Plex back
+to the Tesla P4 the same day; CPU limit raised 10 → 14 to match
+`ubuntu24-gpu-box` growing 12 → 20 vCPU (see below). RX 570 stays
+installed/passed-through but idle.
+
+### New: `gpu-transcode-bench.sh` (`gitops/scripts`)
+A/B benchmarking tool — runs the same real source clip through hardware
+transcode on whichever GPU is local to the host (NVENC or VAAPI), for
+both an HEVC-target and H264-target output, reporting wall-clock time,
+ffmpeg's own speed, and peak GPU utilization. Built to settle the P4-vs-
+RX570 question with real numbers; reusable for the next card swap.
+
+### New: `nvidia-gpu-exporter` — Tesla P4 metrics in Prometheus/Grafana
+`nvidia_smi`-based exporter feeding GPU compute/encoder/decoder
+utilization, VRAM, temp, and power into the Plex Transcoding dashboard.
+Raised the device-plugin's time-slicing 4 → 5 replicas so the exporter's
+own `nvidia.com/gpu` request didn't compete with frigate/immich-ml/
+ollama/plex, which already claimed all 4 existing slices.
+
+### Cluster: `ubuntu24-gpu-box` CPU 12 → 20 vCPU
+Proxmox-side change (not git-tracked) to give frigate/immich-ml/ollama
+more headroom now that Plex's own CPU needs are well understood. Caused
+a brief `UnexpectedAdmissionError` storm on reboot (kubelet came back
+before the nvidia device-plugin re-registered `nvidia.com/gpu`) —
+self-inflicted by the restart, not the CPU change; cleared by deleting
+the stuck pods so their Deployments recreated them.
+
 ## 2026-07-12
 
 ### New: Lidarr (`gitops/workloads/lidarr`)

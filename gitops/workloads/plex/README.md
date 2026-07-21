@@ -3,6 +3,37 @@
 Plex Media Server (linuxserver image), pinned to the GPU node (`gpu: "true"`,
 Tesla P4) for NVENC/NVDEC hardware transcoding.
 
+## GPU / CPU history (2026-07-21)
+
+**CPU limit is 14 cores**, raised in two steps from an original 6:
+- 6 -> 10: a real buffering incident traced to CFS throttling (up to 83% of
+  the time in some 5-min windows) even though the P4 itself sat at ~20%
+  NVENC/NVDEC utilization the whole time -- Plex's transcoder is bursty, and
+  k8s enforces CPU limits over ~100ms windows, so brief spikes above the
+  limit get throttled even when the 5-min average looks fine. See the
+  **Plex Transcoding** Grafana dashboard (CPU throttled %, GPU util) --
+  built specifically to catch this pattern instead of reconstructing it
+  after the fact from logs.
+- 10 -> 14: `ubuntu24-gpu-box` grew 12 -> 20 vCPU the same day; frigate/
+  immich-ml/ollama were only using ~1.3 cores combined at the time, so this
+  leaves them real headroom even at Plex's ceiling.
+
+**Briefly moved to an AMD RX 570 on `ubuntu-26-desktop-node`, then moved
+back.** The RX 570 (VA-API) can't hardware-encode 10-bit HEVC (Polaris VCE
+has no `VAProfileHEVCMain10` encode entrypoint -- decode-only), and this
+library is entirely 10-bit HEVC (see the media-reencode worker), so every
+HEVC-target transcode (Apple TV, etc.) was silently falling back to full
+CPU software encode. Confirmed independently of Plex with
+[`gitops/scripts/gpu-transcode-bench.sh`](../../scripts/README.md), which
+also found the RX 570 is genuinely *faster* than the P4 for H264-target
+encodes -- worth revisiting if a future workload only needs H264 out.
+
+**GPU metrics**: `nvidia-gpu-exporter` (namespace `nvidia-gpu-exporter`)
+exposes live P4 utilization/VRAM/temp/power to Prometheus, feeding the
+same Grafana dashboard. Time-slicing raised 4 -> 5 replicas
+(`nvidia-device-plugin-config`) to fit it without displacing a real
+workload.
+
 ## Storage
 - **Ceph RBD** (`plex-config`, RWO): `/config` — Plex app data + SQLite DB.
   RWO on RBD is why the Deployment uses `Recreate` (avoids Multi-Attach
