@@ -163,10 +163,7 @@ metadata:
   labels:
     app: plex
 spec:
-  # TEMPORARY (2026-07-21): 0 for an fstrim maintenance pass on plex-config
-  # (rbd du showed 36Gi used vs ~15G of real files -- stale blocks from
-  # pre-tmpfs-migration transcode churn). Revert to 1 once done.
-  replicas: 0
+  replicas: 1
   # Recreate (not RollingUpdate): the config PVC is ReadWriteOnce on Ceph RBD,
   # so the old pod must release it before the new pod can attach -- otherwise
   # node moves deadlock with a Multi-Attach error.
