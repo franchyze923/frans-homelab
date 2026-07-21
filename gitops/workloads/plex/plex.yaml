@@ -177,9 +177,13 @@ spec:
       labels:
         app: plex
     spec:
-      # Pin to the GPU node (Tesla P4) for NVENC/NVDEC hardware transcoding.
+      # Moved 2026-07-21: off the Tesla P4 gpu-box onto desktop-node's
+      # passed-through AMD RX 570 (VA-API encode/decode) -- own dedicated
+      # GPU, no more sharing hardware with frigate/immich-ml/ollama, and a
+      # newer/faster CPU underneath the audio-transcode/subtitle-burn/mux
+      # work that isn't GPU-accelerated either way.
       nodeSelector:
-        gpu: "true"
+        gpu-amd: "true"
       initContainers:
         - name: restore-config
           image: busybox:latest
@@ -214,11 +218,6 @@ spec:
               value: "http://192.168.40.200:32400,https://plex.franpolignano.com:443,http://173.62.165.225:32402,http://franchyze923.duckdns.org:32402"
             - name: ALLOWED_NETWORKS
               value: "192.168.40.0/24,10.42.0.0/16"
-            # Required for GPU transcoding: the default capability set
-            # (compute,utility) lacks "video", so NVENC/NVDEC are unavailable
-            # without this. "all" pulls in video + compute + utility.
-            - name: NVIDIA_DRIVER_CAPABILITIES
-              value: "all"
           ports:
             - containerPort: 32400
               name: http
@@ -228,13 +227,16 @@ spec:
               cpu: "4000m"
             limits:
               memory: "16Gi"
-              # Raised from 6 -> 10 (2026-07-21): concurrent transcode sessions
-              # were CPU-throttled at the pod limit while the P4 itself sat at
-              # ~20% NVENC/NVDEC util -- CPU was the bottleneck, not the GPU.
-              # gpu-box has 12 cores; ~2 stay free for frigate/immich-ml/ollama.
-              cpu: "10000m"
-              # One time-sliced slice of the P4 (shares VRAM with ollama/frigate).
-              nvidia.com/gpu: 1
+              # 8, not the 10 used on the old gpu-box (12 cores) -- this VM
+              # only has 10 cores total and also carries geoserver/postgis/
+              # navidrome/overseerr/family-tree + a rook-ceph mon, so this
+              # leaves ~2 cores guaranteed for them even if Plex bursts to
+              # its ceiling. Watch the Plex Transcoding Grafana dashboard
+              # (CPU throttled %) and raise if this turns out too tight.
+              cpu: "8000m"
+              # RX 570 DRM render node via generic-device-plugin (VA-API,
+              # not NVENC) -- see gitops/workloads/generic-device-plugin.
+              devic.es/dri: 1
           volumeMounts:
             - name: config
               mountPath: /config
