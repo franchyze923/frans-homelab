@@ -228,7 +228,11 @@ spec:
               cpu: "4000m"
             limits:
               memory: "16Gi"
-              cpu: "6000m"
+              # Raised from 6 -> 10 (2026-07-21): concurrent transcode sessions
+              # were CPU-throttled at the pod limit while the P4 itself sat at
+              # ~20% NVENC/NVDEC util -- CPU was the bottleneck, not the GPU.
+              # gpu-box has 12 cores; ~2 stay free for frigate/immich-ml/ollama.
+              cpu: "10000m"
               # One time-sliced slice of the P4 (shares VRAM with ollama/frigate).
               nvidia.com/gpu: 1
           volumeMounts:
