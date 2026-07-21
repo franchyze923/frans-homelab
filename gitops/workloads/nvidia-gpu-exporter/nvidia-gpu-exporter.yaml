@@ -1,0 +1,45 @@
+# Exposes the Tesla P4's live utilization/VRAM/temp/power as Prometheus
+# metrics (shells out to nvidia-smi). Requests one nvidia.com/gpu
+# time-slice like any other consumer -- see nvidia-device-plugin's
+# replicas bump (4 -> 5) for why that doesn't displace a real workload.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvidia-gpu-exporter
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: nvidia-gpu-exporter
+  labels:
+    app: nvidia-gpu-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nvidia-gpu-exporter
+  template:
+    metadata:
+      labels:
+        app: nvidia-gpu-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9835"
+    spec:
+      nodeSelector:
+        gpu: "true"
+      containers:
+        - name: nvidia-gpu-exporter
+          image: utkuozdemir/nvidia_gpu_exporter:1.3.1
+          ports:
+            - containerPort: 9835
+              name: metrics
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+              nvidia.com/gpu: 1

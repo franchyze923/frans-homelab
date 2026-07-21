@@ -1,5 +1,8 @@
-# Time-slicing config: the single Tesla P4 is advertised as 4 shareable
-# replicas so multiple pods (ollama + plex, etc.) can each request a GPU.
+# Time-slicing config: the single Tesla P4 is advertised as 5 shareable
+# replicas so multiple pods (ollama, plex, frigate, immich-ml, and now
+# nvidia-gpu-exporter) can each request a GPU. Raised 4 -> 5 on 2026-07-21
+# to fit the metrics exporter without displacing a real workload -- it
+# only queries nvidia-smi, negligible VRAM.
 # NOTE: time-slicing gives NO memory isolation -- all pods share the P4's
 # 8GB VRAM, so keep total usage (ollama ~5GB + plex transcode + frigate
 # ~330MB) under that to avoid CUDA OOM.
@@ -17,7 +20,7 @@ data:
       timeSlicing:
         resources:
           - name: nvidia.com/gpu
-            replicas: 4
+            replicas: 5
 ---
 # NVIDIA device plugin: advertises nvidia.com/gpu on GPU nodes so pods
 # can request GPUs. Based on the upstream static manifest (v0.17.1) with

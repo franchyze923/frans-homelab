@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/franchyze923/frans-homelab.git
+    targetRevision: main
+    path: gitops/workloads/nvidia-gpu-exporter
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nvidia-gpu-exporter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
