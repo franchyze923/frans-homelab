@@ -15,7 +15,9 @@ spec:
   storageClassName: rook-ceph-block
   resources:
     requests:
-      storage: 10Gi
+      # Raised 10 -> 25Gi (2026-07-21): metadata cache alone was 8.4G of the
+      # 10Gi, essentially full. rook-ceph-block supports online expansion.
+      storage: 25Gi
 ---
 # NFS volume for config backups (survives cluster rebuilds)
 apiVersion: v1
