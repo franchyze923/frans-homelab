@@ -16,6 +16,11 @@ metadata:
     app: nvidia-gpu-exporter
 spec:
   replicas: 1
+  # RollingUpdate deadlocks here: the old pod holds its nvidia.com/gpu
+  # slice until the new one is Ready, but the new one can't schedule
+  # without a free slice -- Recreate avoids needing two slices at once.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: nvidia-gpu-exporter
@@ -117,6 +122,10 @@ metadata:
     app: nvidia-gpu-process-exporter
 spec:
   replicas: 1
+  # Same RollingUpdate deadlock as nvidia-gpu-exporter above -- see that
+  # comment.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: nvidia-gpu-process-exporter
