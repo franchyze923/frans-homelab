@@ -130,6 +130,10 @@ spec:
     spec:
       nodeSelector:
         gpu: "true"
+      # nvidia-smi's PID column is a host PID, but process_name resolution
+      # reads /proc/<pid>/comm -- without hostPID this container only sees
+      # its own PID namespace and every process shows "[Not Found]".
+      hostPID: true
       containers:
         - name: nvidia-gpu-process-exporter
           image: python:3.12-slim
