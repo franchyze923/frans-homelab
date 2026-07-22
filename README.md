@@ -32,7 +32,7 @@ frans-homelab/
 
 ### Physical hosts
 
-Five bare-metal machines. The first four carry the cluster — Kubernetes nodes are **VMs on top of them** (see the next table). The fifth (`fran-lenovo-rocky-9`) is the standalone devbox and is **not part of the cluster**. Inventoried live over SSH, 2026-06-29; devbox added 2026-07-16.
+Six bare-metal machines. The first five carry the cluster — Kubernetes nodes are **VMs on top of them** (see the next table). The sixth (`fran-lenovo-rocky-9`) is the standalone devbox and is **not part of the cluster**. Inventoried live over SSH, 2026-06-29; devbox added 2026-07-16; M1 Mac Mini added 2026-07-22 (physical specs not yet inventoried — see below).
 
 #### `ProxMox Server` — Dell PowerEdge R720 · `.10`
 <details><summary>ProxMox Server Photo</summary>
@@ -94,6 +94,21 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
   (s/n `22082325601847`, fw SBFM61.5, 88% life — hosts master-3's 40 G zvol;
   reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
 
+#### `M1 Mac Mini` — Apple M1 · `.96`
+<details><summary>M1 Mac Mini Photo</summary>
+<img src="docs/images/m1-mac-mini.jpg" width="400" alt="M1 Mac Mini">
+</details>
+
+Hosts `mac-m1-worker`, the cluster's only **arm64** node (tainted
+`arch=arm64:NoSchedule` — see the next table), as a nested Ubuntu VM. Physical
+Mac specs (total RAM/storage, macOS version) not yet inventoried; figures
+below are what the guest VM reports to Kubernetes, not the host machine's
+full hardware.
+
+- **vCPU / RAM (VM):** 6 vCPU / ~5.3 GiB allocatable
+- **OS (VM):** Ubuntu 26.04 LTS (kernel 7.0.0-27-generic), containerd 2.2.2
+- **Storage (VM):** ~62 GB ephemeral
+
 #### `fran-lenovo-rocky-9 devbox` — Lenovo ThinkCentre M710q (10MR0004US) · `.192`
 <details><summary>Devbox Photo</summary>
 <img src="docs/images/devbox.jpg" width="400" alt="Devbox">
@@ -124,7 +139,7 @@ kubeconfigs, kubelets, and Cilium):
 | worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers (worker-1 also carries a Ceph OSD on the NVMe) |
 | `ubuntu24-gpu-box` | amd64 | `pve` (R720), **Tesla P4** (GPU passthrough), 20 vCPU (raised from 12, 2026-07-21) | GPU workloads (Plex, ollama, Frigate, Immich-ML, nvidia-gpu-exporter) |
 | `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`.76`, 10 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
-| `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
+| `mac-m1-worker` | **arm64** | Ubuntu VM on `M1 Mac Mini` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
 
 **GPU — Tesla P4:** 8 GB GDDR5, 2,560 CUDA cores (Pascal), 75 W single-slot, NVENC/NVDEC (incl. HEVC Main10/10-bit encode). **Time-sliced** (5 replicas, raised from 4 on 2026-07-21 to fit `nvidia-gpu-exporter`) so Plex + ollama + Frigate + Immich-ML + the exporter share it; consumers pinned with `nodeSelector: gpu=true`.
 
