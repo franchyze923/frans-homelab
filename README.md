@@ -1,5 +1,7 @@
 # frans-homelab
 
+<img src="docs/images/homelab.jpg" width="600" alt="The rack">
+
 Everything that builds and runs my homelab Kubernetes cluster, in one repo.
 
 It has two layers:
@@ -33,6 +35,10 @@ frans-homelab/
 Five bare-metal machines. The first four carry the cluster — Kubernetes nodes are **VMs on top of them** (see the next table). The fifth (`fran-lenovo-rocky-9`) is the standalone devbox and is **not part of the cluster**. Inventoried live over SSH, 2026-06-29; devbox added 2026-07-16.
 
 #### `ProxMox Server` — Dell PowerEdge R720 · `.10`
+<details><summary>ProxMox Server Photo</summary>
+<img src="docs/images/proxmox-r720-primary.jpg" width="400" alt="ProxMox Server">
+</details>
+
 Primary Proxmox host — runs master-1, the Rocky workers, and ubuntu24-gpu-box (P4 GPU passed through)
 
 - **CPU:** 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz
@@ -44,6 +50,10 @@ Primary Proxmox host — runs master-1, the Rocky workers, and ubuntu24-gpu-box 
   disk — moved off the NVMe 2026-07-07 for drive-level Ceph redundancy)
 
 #### `Old Desktop` — Gigabyte B450M DS3H · `.9`
+<details><summary>Old Desktop Photo</summary>
+<img src="docs/images/old-desktop.jpg" width="400" alt="Old Desktop">
+</details>
+
 Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest per-core CPU → preferred home for CPU-bound workloads.
 
 - **CPU:** Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2)
@@ -56,6 +66,10 @@ Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest pe
 - ⚠️ Board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
 
 #### `Unraid NAS` — Dell EMC Avamar datastore (Intel S2600GZ board) · `.116`
+<details><summary>Unraid NAS Photo</summary>
+<img src="docs/images/unraid-nas.jpg" width="400" alt="Unraid NAS">
+</details>
+
 NAS — bulk media + nightly config backups, NFS-exported to the cluster.
 
 - **CPU:** Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT)
@@ -64,6 +78,10 @@ NAS — bulk media + nightly config backups, NFS-exported to the cluster.
 - **Storage:** 2× 10.9 TB HDD array + 476 GB SSD cache (Intel RMS25CB080 HBA) + 16 GB boot USB
 
 #### `TrueNas backup NAS` — Dell PowerEdge R720 · `.240`
+<details><summary>TrueNas backup NAS Photo</summary>
+<img src="docs/images/truenas-scale-r720.jpg" width="400" alt="TrueNas backup NAS">
+</details>
+
 NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
 
 - **CPU:** 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz
@@ -77,6 +95,10 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
   reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
 
 #### `fran-lenovo-rocky-9 devbox` — Lenovo ThinkCentre M710q (10MR0004US) · `.192`
+<details><summary>Devbox Photo</summary>
+<img src="docs/images/devbox.jpg" width="400" alt="Devbox">
+</details>
+
 Devbox / workstation (`fsp` in SSH config) — **not a cluster member**, deliberately
 (2026-07-16): only 4 threads and it's the interactive dev machine, so joining it
 would couple the workspace to cluster scheduling for ~5% more capacity. Kaby Lake
