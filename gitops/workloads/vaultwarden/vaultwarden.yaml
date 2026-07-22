@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vaultwarden
+---
+# db.sqlite3, attachments, RSA keys. Ceph RBD for reliability (no stale NFS
+# handles); Recreate strategy below since sqlite wants a single writer.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data
+  namespace: vaultwarden
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+---
+# NFS volume for nightly backups (survives cluster rebuilds)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: vaultwarden-data-backup-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - hard
+    - noresvport
+    - timeo=600
+    - retrans=5
+  nfs:
+    server: 192.168.40.116
+    path: /mnt/user/FranData/FranArchives/k8s-pvs/vaultwarden
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data-backup
+  namespace: vaultwarden
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: vaultwarden-data-backup-pv
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vaultwarden
+  template:
+    metadata:
+      labels:
+        app: vaultwarden
+    spec:
+      initContainers:
+        - name: restore-config
+          image: busybox:latest
+          command: ['sh', '-c', 'if [ -z "$(find /data -mindepth 1 -not -name lost+found 2>/dev/null)" ]; then if [ -f /data-backup/backup.tar.gz ]; then echo "Restoring from tarball..."; tar xzf /data-backup/backup.tar.gz -C /data; else echo "No backup found, skipping."; fi; else echo "Already populated, skipping restore."; fi']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: data-backup
+              mountPath: /data-backup
+              readOnly: true
+      containers:
+        - name: vaultwarden
+          image: vaultwarden/server:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: DOMAIN
+              value: "https://vaultwarden.franpolignano.com"
+            - name: WEBSOCKET_ENABLED
+              value: "true"
+            # Flip to false in the admin panel (or here) once you've created
+            # your account -- see README.
+            - name: SIGNUPS_ALLOWED
+              value: "true"
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vaultwarden-secrets
+                  key: ADMIN_TOKEN
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: vaultwarden-data
+        - name: data-backup
+          persistentVolumeClaim:
+            claimName: vaultwarden-data-backup
+---
+# Nightly backup of /data (sqlite DB, attachments, RSA keys) to the NAS
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vaultwarden-data-backup
+  namespace: vaultwarden
+spec:
+  schedule: "45 1 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          # vaultwarden-data is RWO Ceph RBD: it can only attach to one node,
+          # so the backup pod must land where vaultwarden is running.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: vaultwarden
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: debian:stable-slim
+              command: ['sh', '-c', 'echo "Starting vaultwarden data backup..."; tar czf /data-backup/backup.tar.gz -C /data . 2>/tmp/e; rc=$?; tail -5 /tmp/e; if [ $rc -gt 1 ]; then echo "BACKUP FAILED (tar rc=$rc)"; exit $rc; fi; echo "Backup complete at $(date)"']
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: data-backup
+                  mountPath: /data-backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: vaultwarden-data
+            - name: data-backup
+              persistentVolumeClaim:
+                claimName: vaultwarden-data-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  type: ClusterIP
+  selector:
+    app: vaultwarden
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - vaultwarden.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: vaultwarden
+          port: 80
