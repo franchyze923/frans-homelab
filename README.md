@@ -32,7 +32,7 @@ frans-homelab/
 
 Five bare-metal machines. The first four carry the cluster — Kubernetes nodes are **VMs on top of them** (see the next table). The fifth (`fran-lenovo-rocky-9`) is the standalone devbox and is **not part of the cluster**. Inventoried live over SSH, 2026-06-29; devbox added 2026-07-16.
 
-#### `ProxMox Server` — Dell PowerEdge R720 · `192.168.40.10`
+#### `ProxMox Server` — Dell PowerEdge R720 · `.10`
 Primary Proxmox host — runs master-1, the Rocky workers, and ubuntu24-gpu-box (P4 GPU passed through)
 
 - **CPU:** 2× Xeon E5-2660 v2 — 20c / 40t @ 2.2–3.0 GHz
@@ -43,7 +43,7 @@ Primary Proxmox host — runs master-1, the Rocky workers, and ubuntu24-gpu-box 
   870 EVO SATA SSD (Proxmox OS on `local-lvm`, plus master-1's 150 G Ceph OSD
   disk — moved off the NVMe 2026-07-07 for drive-level Ceph redundancy)
 
-#### `Old Desktop` — Gigabyte B450M DS3H · `192.168.40.9`
+#### `Old Desktop` — Gigabyte B450M DS3H · `.9`
 Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest per-core CPU → preferred home for CPU-bound workloads.
 
 - **CPU:** Ryzen 5 3600 — 6c / 12t @ ≤4.2 GHz (Zen2)
@@ -55,7 +55,7 @@ Secondary standalone Proxmox host — Ryzen worker VM + XFCE desktop. Fastest pe
   name lies) + DVD-RW
 - ⚠️ Board ships with **SVM (AMD-V) disabled in BIOS** even though the `svm` flag shows — enable *SVM Mode* or `kvm_amd` won't load and no VM starts.
 
-#### `Unraid NAS` — Dell EMC Avamar datastore (Intel S2600GZ board) · `192.168.40.116`
+#### `Unraid NAS` — Dell EMC Avamar datastore (Intel S2600GZ board) · `.116`
 NAS — bulk media + nightly config backups, NFS-exported to the cluster.
 
 - **CPU:** Xeon E5-2603 — 4c / 4t @ 1.8 GHz (no HT)
@@ -63,7 +63,7 @@ NAS — bulk media + nightly config backups, NFS-exported to the cluster.
 - **OS:** Unraid 7.3.1 (kernel 6.18.33)
 - **Storage:** 2× 10.9 TB HDD array + 476 GB SSD cache (Intel RMS25CB080 HBA) + 16 GB boot USB
 
-#### `TrueNas backup NAS` — Dell PowerEdge R720 · `192.168.40.240`
+#### `TrueNas backup NAS` — Dell PowerEdge R720 · `.240`
 NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
 
 - **CPU:** 2× Xeon E5-2640 — 12c / 24t @ 2.5–3.0 GHz
@@ -76,7 +76,7 @@ NAS — TrueNAS SCALE (ZFS). The homelab's second R720.
   (s/n `22082325601847`, fw SBFM61.5, 88% life — hosts master-3's 40 G zvol;
   reclaimed 2026-07-06 from the legacy "Plex Pool") + DVD-RW
 
-#### `fran-lenovo-rocky-9 devbox` — Lenovo ThinkCentre M710q (10MR0004US) · `192.168.40.192`
+#### `fran-lenovo-rocky-9 devbox` — Lenovo ThinkCentre M710q (10MR0004US) · `.192`
 Devbox / workstation (`fsp` in SSH config) — **not a cluster member**, deliberately
 (2026-07-16): only 4 threads and it's the interactive dev machine, so joining it
 would couple the workspace to cluster scheduling for ~5% more capacity. Kaby Lake
@@ -91,7 +91,7 @@ has AVX2, so per-core it actually out-encodes the R720's Ivy Bridge Xeons at 35 
 
 VMs running **on the physical hosts above** — kubeadm, mixed-arch (7× amd64 +
 1× arm64). **HA control plane (2026-07-07):** 3 masters, one per physical
-machine, behind **kube-vip VIP `192.168.40.171`** (the API endpoint for
+machine, behind **kube-vip VIP `.171`** (the API endpoint for
 kubeconfigs, kubelets, and Cilium):
 
 | Node | Arch | Runs on | Role |
@@ -101,7 +101,7 @@ kubeconfigs, kubelets, and Cilium):
 | `k8s-cp-truenas-node` | amd64 | `truenas` VM (`.249`, 2 vCPU / 8 GiB / 50 GiB, on `VM_Pool` SSD) | Control plane 3/3 + Ceph OSD (135 G zvol) + mon `e` |
 | worker ×2 (Rocky Linux) | amd64 | `pve` (R720) | Workers (worker-1 also carries a Ceph OSD on the NVMe) |
 | `ubuntu24-gpu-box` | amd64 | `pve` (R720), **Tesla P4** (GPU passthrough), 20 vCPU (raised from 12, 2026-07-21) | GPU workloads (Plex, ollama, Frigate, Immich-ML, nvidia-gpu-exporter) |
-| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`192.168.40.76`, 10 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
+| `ubuntu-26-desktop-node` | amd64 | `fran` (B450M), VM 100 (`.76`, 10 vCPU / 16 GiB / 100 GiB, Ubuntu 26.04) | Worker + XFCE desktop + mon `d` |
 | `mac-m1-worker` | **arm64** | M1 Mac VM on `pve` | arm64 worker (tainted `arch=arm64:NoSchedule`) |
 
 **GPU — Tesla P4:** 8 GB GDDR5, 2,560 CUDA cores (Pascal), 75 W single-slot, NVENC/NVDEC (incl. HEVC Main10/10-bit encode). **Time-sliced** (5 replicas, raised from 4 on 2026-07-21 to fit `nvidia-gpu-exporter`) so Plex + ollama + Frigate + Immich-ML + the exporter share it; consumers pinned with `nodeSelector: gpu=true`.
@@ -110,7 +110,7 @@ kubeconfigs, kubelets, and Cilium):
 
 ### Storage
 
-**Unraid NFS** (`192.168.40.116`) — bulk media + nightly config backups (anything too big or recreatable for Ceph):
+**Unraid NFS** (`.116`) — bulk media + nightly config backups (anything too big or recreatable for Ceph):
 
 | Storage | FS | Size | Role |
 |---|---|---|---|
@@ -139,18 +139,18 @@ runbook in [`gitops/README.md`](gitops/README.md).
 ## Network
 
 - **CNI:** Cilium (no kube-proxy) + **Cilium Gateway API** for ingress & LB IPAM.
-- **Gateway:** `main-gateway` at **`192.168.40.202`**, wildcard TLS for `*.franpolignano.com`. Web UIs reach the cluster via `HTTPRoute`.
-- **LoadBalancer pool:** `192.168.40.200–203` (Cilium LB IPAM). Most services share `192.168.40.201` via the `lbipam.cilium.io/sharing-key: "platform"` annotation.
+- **Gateway:** `main-gateway` at **`.202`**, wildcard TLS for `*.franpolignano.com`. Web UIs reach the cluster via `HTTPRoute`.
+- **LoadBalancer pool:** `.200–203` (Cilium LB IPAM). Most services share `.201` via the `lbipam.cilium.io/sharing-key: "platform"` annotation.
 
 | IP:port | Service |
 |---|---|
-| `192.168.40.200:32400` | plex |
-| `192.168.40.201:7878` | radarr |
-| `192.168.40.201:8989` | sonarr |
-| `192.168.40.201:8080` | sabnzbd |
-| `192.168.40.201:5000` | weight-dashboard |
-| `192.168.40.202:80,443` | main-gateway (all `*.franpolignano.com` web UIs) |
-| `192.168.40.203:80` | open-webui |
+| `.200:32400` | plex |
+| `.201:7878` | radarr |
+| `.201:8989` | sonarr |
+| `.201:8080` | sabnzbd |
+| `.201:5000` | weight-dashboard |
+| `.202:80,443` | main-gateway (all `*.franpolignano.com` web UIs) |
+| `.203:80` | open-webui |
 
 (Full list in [`gitops/README.md`](gitops/README.md).)
 
