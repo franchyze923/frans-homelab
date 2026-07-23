@@ -3,8 +3,13 @@ kind: Namespace
 metadata:
   name: excalidraw
 ---
-# Stateless: excalidraw/excalidraw just serves static assets, drawings
-# persist in the browser's own storage. No PVC/backup needed.
+# Stateless: excalidraw just serves static assets, drawings persist in
+# the browser's own storage. No PVC/backup needed.
+# Custom image (not upstream excalidraw/excalidraw): the collab server
+# URL is a Vite env var compiled into the JS bundle at build time, so
+# it's rebuilt from source (franchyze923/excalidraw-selfhost) pointing
+# at our own excalidraw-room instead of Excalidraw's public
+# oss-collab.excalidraw.com. See that repo's README to rebuild/update.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,7 +29,7 @@ spec:
     spec:
       containers:
         - name: excalidraw
-          image: excalidraw/excalidraw:latest
+          image: franchyze923/excalidraw:latest
           ports:
             - containerPort: 80
               name: http
@@ -75,4 +80,81 @@ spec:
   rules:
     - backendRefs:
         - name: excalidraw
+          port: 80
+---
+# Collaboration relay (socket.io). Also stateless: rooms exist only in
+# memory for the life of the connection, nothing persisted to disk.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalidraw-room
+  namespace: excalidraw
+  labels:
+    app: excalidraw-room
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: excalidraw-room
+  template:
+    metadata:
+      labels:
+        app: excalidraw-room
+    spec:
+      containers:
+        - name: excalidraw-room
+          image: excalidraw/excalidraw-room:latest
+          env:
+            - name: CORS_ORIGIN
+              value: https://excalidraw.franpolignano.com
+          ports:
+            - containerPort: 80
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: excalidraw-room
+  namespace: excalidraw
+  labels:
+    app: excalidraw-room
+spec:
+  type: ClusterIP
+  selector:
+    app: excalidraw-room
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: excalidraw-room
+  namespace: excalidraw
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - excalidraw-room.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: excalidraw-room
           port: 80
