@@ -146,6 +146,7 @@ data:
     https://open.spotify.com/playlist/5Fh41P8vWjZI9Yl62CJPMI?si=d77c025e623b4fef
     https://open.spotify.com/playlist/1tVYgHZ62gSAg9Gj2wGWy3?si=0a069ba7d1bd4814
     https://open.spotify.com/playlist/68CXBSvmntGRW3L5XRtCrQ?si=c183af554dbb4e06
+    https://open.spotify.com/playlist/5mkNoaqKlIRE77kcuFJcrK?si=e3a14313d2e64ade
   # After each sync, mirror the m3u8 playlists into Plex ("Fran's Music"
   # includes /media/Music/spotdl; the job sees the same files at /music).
   # Tracks are resolved to library ratingKeys and the playlist is built via
