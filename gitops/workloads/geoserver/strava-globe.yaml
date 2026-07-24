@@ -139,7 +139,24 @@ data:
       const sid = String(p.id ?? '').replace(/\D/g,'');
       const link = sid ? '<p style="margin-top:8px"><a href="https://www.strava.com/activities/'+sid+
         '" target="_blank" style="color:#6ea8e8">Open in Strava ↗</a></p>' : '';
-      return '<table style="font-size:13px;border-collapse:collapse">'+tr+'</table>'+link;
+      return '<table style="font-size:13px;border-collapse:collapse">'+tr+'</table>'+link+photoGallery(p);
+    }
+
+    // p.photos is the strava_activities.photos jsonb column (array of CDN
+    // urls, largest size Strava returned). GeoServer's jsonb -> GeoJSON
+    // serialization varies by version: sometimes a nested array, sometimes
+    // a JSON-encoded string -- handle both.
+    function photoGallery(p){
+      if (!p.photos) return '';
+      let urls = p.photos;
+      if (typeof urls === 'string'){
+        try { urls = JSON.parse(urls); } catch { return ''; }
+      }
+      if (!Array.isArray(urls) || !urls.length) return '';
+      const imgs = urls.map(u => '<a href="'+u+'" target="_blank">'+
+        '<img src="'+u+'" loading="lazy" style="width:72px;height:72px;object-fit:cover;'+
+        'border-radius:6px;margin:2px"></a>').join('');
+      return '<div style="display:flex;flex-wrap:wrap;margin-top:8px">'+imgs+'</div>';
     }
 
     async function main(){
@@ -326,7 +343,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "13"
+        checksum/config: "14"
     spec:
       containers:
         - name: nginx

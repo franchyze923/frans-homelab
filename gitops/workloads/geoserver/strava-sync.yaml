@@ -112,6 +112,7 @@ data:
 
     # --- full-resolution streams per activity; fall back to summary polyline
     loaded = 0
+    photos_rate_limited = False
     for a in acts:
         st, streams = http(f"{API}/activities/{a['id']}/streams?keys={STREAM_KEYS}&key_by_type=true")
         if st == 429:
@@ -126,24 +127,43 @@ data:
                     extra[k] = v["data"]
         if not pts:  # no GPS (trainer/manual) -> maybe summary line
             pts = decode_polyline((a.get("map") or {}).get("summary_polyline") or "")
+
+        # photos: a separate call, so only pay for it when the activity has any.
+        # photos_val feeds the INSERT (NULL if never fetched -- fine, row is new);
+        # photos_keep feeds the UPDATE, defaulting to "leave it alone" so a 429
+        # here doesn't blow away photos a previous run already fetched.
+        photos_val, photos_keep = "NULL", "strava_activities.photos"
+        if a.get("total_photo_count") and not photos_rate_limited:
+            st, photos = http(f"{API}/activities/{a['id']}/photos?photo_sources=true&size=600")
+            if st == 429:
+                print(f"rate limited fetching photos for {a['id']}; will retry next run")
+                photos_rate_limited = True
+            elif st == 200:
+                urls = []
+                for p in photos:
+                    sizes = p.get("urls") or {}
+                    if sizes:
+                        urls.append(sizes[max(sizes, key=int)])
+                photos_val = photos_keep = jsonb(urls)
+
         sql.append(
             "INSERT INTO strava_activities(id, name, sport_type, start_date,"
             " distance_m, moving_time_s, elapsed_time_s, elev_gain_m,"
-            " avg_speed_ms, max_speed_ms, avg_hr, max_hr, avg_watts, kudos, geom)"
+            " avg_speed_ms, max_speed_ms, avg_hr, max_hr, avg_watts, kudos, photos, geom)"
             f" VALUES ({a['id']}, {esc(a.get('name'))}, {esc(a.get('sport_type'))},"
             f" {esc(a.get('start_date'))}, {num(a.get('distance'))},"
             f" {num(a.get('moving_time'))}, {num(a.get('elapsed_time'))},"
             f" {num(a.get('total_elevation_gain'))}, {num(a.get('average_speed'))},"
             f" {num(a.get('max_speed'))}, {num(a.get('average_heartrate'))},"
             f" {num(a.get('max_heartrate'))}, {num(a.get('average_watts'))},"
-            f" {num(a.get('kudos_count'))}, {wkt(pts)})"
+            f" {num(a.get('kudos_count'))}, {photos_val}, {wkt(pts)})"
             " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,"
             " sport_type = EXCLUDED.sport_type, start_date = EXCLUDED.start_date,"
             " distance_m = EXCLUDED.distance_m, moving_time_s = EXCLUDED.moving_time_s,"
             " elapsed_time_s = EXCLUDED.elapsed_time_s, elev_gain_m = EXCLUDED.elev_gain_m,"
             " avg_speed_ms = EXCLUDED.avg_speed_ms, max_speed_ms = EXCLUDED.max_speed_ms,"
             " avg_hr = EXCLUDED.avg_hr, max_hr = EXCLUDED.max_hr,"
-            " avg_watts = EXCLUDED.avg_watts, kudos = EXCLUDED.kudos,"
+            f" avg_watts = EXCLUDED.avg_watts, kudos = EXCLUDED.kudos, photos = {photos_keep},"
             " geom = EXCLUDED.geom;")
         sql.append(
             f"INSERT INTO strava_activity_data(id, raw, streams) VALUES ({a['id']},"
@@ -209,6 +229,7 @@ spec:
                     max_hr real,
                     avg_watts real,
                     kudos int,
+                    photos jsonb,
                     geom geometry(LineString,4326));
                   -- upgrades for tables created by the pre-metadata schema
                   ALTER TABLE strava_activities
@@ -217,7 +238,8 @@ spec:
                     ADD COLUMN IF NOT EXISTS avg_hr real,
                     ADD COLUMN IF NOT EXISTS max_hr real,
                     ADD COLUMN IF NOT EXISTS avg_watts real,
-                    ADD COLUMN IF NOT EXISTS kudos int;
+                    ADD COLUMN IF NOT EXISTS kudos int,
+                    ADD COLUMN IF NOT EXISTS photos jsonb;
                   CREATE INDEX IF NOT EXISTS strava_activities_geom_idx
                     ON strava_activities USING gist(geom);
                   CREATE TABLE IF NOT EXISTS strava_activity_data(

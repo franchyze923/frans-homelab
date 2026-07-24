@@ -109,7 +109,10 @@ rides get the summary polyline or a NULL geom):
 
 - `strava_activities` — published as `strava:strava_activities`: geometry +
   name, sport_type, start_date, distance, times, elevation gain, avg/max
-  speed, avg/max HR, avg watts, kudos.
+  speed, avg/max HR, avg watts, kudos, photos (jsonb array of CDN urls,
+  largest size returned; only fetched when the activity summary reports
+  `total_photo_count > 0`, to avoid a per-activity API call on the common
+  case of no photos).
 - `strava_activity_data` — NOT published (would bloat WFS): `raw` jsonb =
   the complete API summary (query anything: `raw->>'suffer_score'`), and
   `streams` jsonb = per-point time/altitude/heartrate/cadence/watts/
@@ -147,7 +150,17 @@ service so the browser sees one origin (no CORS). Feeds on
 `strava:strava_activities_globe`, a `ST_SimplifyPreserveTopology(geom,
 0.00005)` view (~5x smaller payload; full-res geometry stays in
 `strava_activities`). Cesium + OSM tiles come from CDNs (no ion token —
-add one + world terrain later if 3D relief is wanted).
+add one + world terrain later if 3D relief is wanted). Clicking a track
+shows its infoBox; if the activity has photos they render as a thumbnail
+strip that links out to the full-size Strava CDN image.
+
+**Manual step after adding a column to `strava_activities`** (e.g. `photos`):
+the globe view is a GeoServer SQL view, created out-of-band via REST/UI and
+not tracked in git (see above), so its own SELECT list needs the same edit
+by hand: GeoServer UI → Layer Preview (or Stores) → `strava_activities_globe`
+→ Edit SQL, add the column, then `POST /geoserver/rest/reset` to refresh the
+schema cache. Until that's done the new column won't show up in the WFS
+output the globe reads from, even though it's already in the table.
 
 Gotchas learned:
 - subPath ConfigMap mounts don't live-update: bump the
