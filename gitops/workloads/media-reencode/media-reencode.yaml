@@ -211,7 +211,7 @@ spec:
   # 2026-07-21: scaled to 0 -- M1-only for power reasons (also frees up
   # desktop-node's CPU/power headroom while it takes on Plex + GPU passthrough).
   # Revert to 1 to bring this worker back.
-  replicas: 1
+  replicas: 0
   strategy:
     type: Recreate
   selector:
