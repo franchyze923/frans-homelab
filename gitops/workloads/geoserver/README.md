@@ -122,6 +122,22 @@ Pipeline: psql bootstraps schema + reads state → stdlib-only python (no pip)
 fetches + writes SQL → psql applies (upserts). No custom image. After adding
 columns, refresh GeoServer's schema cache: `POST /geoserver/rest/reset`.
 
+**Backfilling a new column for already-synced activities:** the hourly job
+only lists activities `after` the newest `start_date` already in the table
+(see `read-state` init container), so a brand-new column (e.g. `photos`)
+never gets backfilled for old rows on its own — only activities synced going
+forward get it. To backfill: an ad hoc one-off `Job` (not a git-tracked
+manifest — same "ad hoc, not in git" convention as the
+`kubectl create job --from=cronjob/strava-sync` backfill above), reusing the
+sync job's init-container pattern (psql reads `strava_auth`'s refresh token +
+a candidate id list, python does the OAuth refresh + per-activity API calls
+and writes `UPDATE` SQL, psql applies it). Critically it must persist the
+rotated refresh token back into `strava_auth` even though it's not the
+regular sync job — otherwise the next hourly run's token is stale. Capped
+per run like the main sync, safe to rerun until the candidate count hits 0.
+Done for `photos` on 2026-07-24: 150 activities had `total_photo_count > 0`,
+all backfilled across two capped runs.
+
 One-time setup:
 
 1. Create an API app at https://www.strava.com/settings/api
@@ -155,12 +171,35 @@ shows its infoBox; if the activity has photos they render as a thumbnail
 strip that links out to the full-size Strava CDN image.
 
 **Manual step after adding a column to `strava_activities`** (e.g. `photos`):
-the globe view is a GeoServer SQL view, created out-of-band via REST/UI and
-not tracked in git (see above), so its own SELECT list needs the same edit
-by hand: GeoServer UI → Layer Preview (or Stores) → `strava_activities_globe`
-→ Edit SQL, add the column, then `POST /geoserver/rest/reset` to refresh the
-schema cache. Until that's done the new column won't show up in the WFS
-output the globe reads from, even though it's already in the table.
+`strava_activities_globe` is a plain PostgreSQL view (`\d+
+strava_activities_globe` / `pg_get_viewdef`), not a GeoServer virtual table —
+GeoServer just introspects it, so there's no GeoServer-side SQL to edit.
+Update it directly against `postgis`:
+
+```sql
+CREATE OR REPLACE VIEW strava_activities_globe AS
+SELECT id, name, sport_type, start_date, distance_m, moving_time_s,
+       elapsed_time_s, elev_gain_m, avg_speed_ms, max_speed_ms, avg_hr,
+       max_hr, avg_watts, kudos,
+       ST_SimplifyPreserveTopology(geom, 0.00005)::geometry(LineString,4326) AS geom,
+       <new_column>
+FROM strava_activities;
+```
+
+`CREATE OR REPLACE VIEW` only allows new output columns appended at the
+*end* of the SELECT list (Postgres rejects reordering/inserting), so new
+columns land after `geom` regardless of where they sit in the table. Then
+tell GeoServer to pick up the new attribute and drop its cache:
+
+```sh
+curl -u admin:<pw> -X PUT \
+  ".../rest/workspaces/strava/datastores/postgis/featuretypes/strava_activities_globe?recalculate=nativebbox,attributes" \
+  -H "Content-type: text/xml" -d '<featureType><name>strava_activities_globe</name></featureType>'
+curl -u admin:<pw> -X POST ".../rest/reset"
+```
+
+Done for `photos` on 2026-07-24 (verified via WFS GetFeature that the
+`photos` property comes back as a JSON-encoded string array).
 
 Gotchas learned:
 - subPath ConfigMap mounts don't live-update: bump the
