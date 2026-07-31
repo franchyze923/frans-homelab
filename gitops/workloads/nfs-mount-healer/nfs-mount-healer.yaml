@@ -175,21 +175,39 @@ spec:
                   echo "$TARGETS" | while IFS='|' read -r ns label path; do
                     [ -z "$ns" ] && continue
                     pod=$(kubectl get pod -n "$ns" -l "$label" \
-                      --field-selector=status.phase=Running \
                       -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-                    if [ -z "$pod" ]; then echo "  [$ns] no running pod, skip"; continue; fi
-                    # ls every mount (stdout discarded); capture stderr so a
-                    # "Stale file handle" on ANY path is detected.
-                    out=$(timeout 20 kubectl exec -n "$ns" "$pod" -- \
-                      sh -c "for p in $path; do ls \$p 1>/dev/null; done" 2>&1)
-                    rc=$?
-                    if echo "$out" | grep -qi "stale file handle"; then
-                      echo "  [$ns/$pod] STALE ($out) -> deleting pod to remount"
-                      kubectl delete pod -n "$ns" "$pod" --wait=false
-                    elif [ $rc -ne 0 ]; then
-                      echo "  [$ns/$pod] rc=$rc (not stale: '$out') -> leaving alone"
+                    if [ -z "$pod" ]; then echo "  [$ns] no pod, skip"; continue; fi
+                    phase=$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.status.phase}' 2>/dev/null)
+                    if [ "$phase" = "Running" ]; then
+                      # ls every mount (stdout discarded); capture stderr so a
+                      # "Stale file handle" on ANY path is detected.
+                      out=$(timeout 20 kubectl exec -n "$ns" "$pod" -- \
+                        sh -c "for p in $path; do ls \$p 1>/dev/null; done" 2>&1)
+                      rc=$?
+                      if echo "$out" | grep -qi "stale file handle"; then
+                        echo "  [$ns/$pod] STALE ($out) -> deleting pod to remount"
+                        kubectl delete pod -n "$ns" "$pod" --wait=false
+                      elif [ $rc -ne 0 ]; then
+                        echo "  [$ns/$pod] rc=$rc (not stale: '$out') -> leaving alone"
+                      else
+                        echo "  [$ns/$pod] mounts OK ($path)"
+                      fi
                     else
-                      echo "  [$ns/$pod] mounts OK ($path)"
+                      # Pod never reached Running, so we can't exec in --
+                      # this is the case where the NFS handle went stale
+                      # at the kubelet volume-mount step itself (surfaces
+                      # as CreateContainerError, stuck forever, and was
+                      # previously invisible to this healer since it only
+                      # looked at Running pods). Check the pod's own events
+                      # for kubelet's stale-handle message instead.
+                      ev=$(kubectl get events -n "$ns" --field-selector involvedObject.name="$pod" -o json 2>/dev/null \
+                        | grep -i "stale.*file handle")
+                      if [ -n "$ev" ]; then
+                        echo "  [$ns/$pod] STALE at mount (phase=$phase) -> deleting pod to remount"
+                        kubectl delete pod -n "$ns" "$pod" --wait=false
+                      else
+                        echo "  [$ns/$pod] phase=$phase, no stale evidence, leaving alone"
+                      fi
                     fi
                   done
                   echo "scan complete"
