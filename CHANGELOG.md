@@ -4,6 +4,38 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-07-27
+
+### Plex CrashLoopBackOff on `ubuntu24-gpu-box`: NVIDIA driver/library version mismatch
+Plex sat in `CrashLoopBackOff` for ~20h with no useful container logs — the
+failure was one level down, in containerd itself: `failed to initialize
+NVML: Driver/library version mismatch` while generating the CDI device
+spec (exit 128, `StartError`). Root cause: `unattended-upgrades` silently
+bumped the `nvidia-*-580-server` packages 580.159.03 → 580.173.02 on
+2026-07-25 06:44 via the daily `apt-daily-upgrade.timer`, but the
+already-loaded kernel module stayed at the old version until a reboot —
+so userspace (NVML/`nvidia-smi`) and kernel-space disagreed, and any
+container requesting GPU access failed outright. Same pattern had
+happened twice before undetected (535-series bumps on 2026-05-21 and
+2026-01-29) — it just hadn't collided with something that needed the GPU
+badly enough to surface loudly until now.
+
+Fixed by rebooting the node (module refcount was 182, held by
+`nvidia_uvm`/`nvidia_modeset`, so a live `rmmod`/`modprobe` reload wasn't
+possible). To prevent recurrence: `apt-mark hold` on all `nvidia-*-580-server`
+/ `libnvidia-*-580-server` packages, plus an explicit
+`Unattended-Upgrade::Package-Blacklist` entry for the same in
+`/etc/apt/apt.conf.d/50unattended-upgrades` (backed up as
+`50unattended-upgrades.bak.20260727` first) — driver upgrades on this node
+now require a deliberate unhold + reboot, not a silent 3am apt run.
+
+Secondary casualty, self-resolved: the `media-reencode-arm` worker
+(`mac-m1-worker`) kept running fine throughout, but its 6-hourly
+Plex-reachability check (`curl plex.plex.svc.cluster.local:32400`) failed
+each cycle during the outage and fell back to "no claimable candidates."
+No fix needed — confirmed Plex reachable from the worker pod post-fix, so
+its next cycle resolves normally on its own.
+
 ## 2026-07-21
 
 ### media-reencode: restored app, added toggle.sh, scaled to M1-only
