@@ -14,6 +14,14 @@
 # talks to the API and emits SQL -> psql applies it. Backfill is capped per
 # run (rate limits); it catches up across daily runs, or run it by hand:
 #   kubectl -n geoserver create job --from=cronjob/strava-sync strava-sync-now
+#
+# Photo recheck: the "new activities" list only looks at start_date > the
+# newest one already synced, so an activity is only ever inspected once. If
+# a photo gets attached to it *after* that first sync (the common case: you
+# finish the activity, the next hourly run picks it up before you've picked
+# a photo from your camera roll), it would otherwise never be picked up.
+# RECHECK_HOURS re-checks recent still-photo-less activities every run --
+# cheap (one photos-endpoint call per candidate, no re-fetch of streams/geom).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -172,10 +180,33 @@ data:
             " streams = EXCLUDED.streams;")
         loaded += 1
 
+    # --- recheck recent still-photo-less activities in case a photo was
+    # attached after their initial sync. Only touches the photos column --
+    # streams/geom/metadata don't change after the fact, so no need to
+    # re-pull those.
+    rechecked = 0
+    recheck_ids = [l.strip() for l in open("/shared/recheck_ids") if l.strip()]
+    for aid in recheck_ids:
+        st, photos = http(f"{API}/activities/{aid}/photos?photo_sources=true&size=600")
+        if st == 429:
+            print(f"rate limited rechecking photos; {rechecked}/{len(recheck_ids)} done")
+            break
+        if st != 200 or not photos:
+            continue
+        urls = []
+        for p in photos:
+            sizes = p.get("urls") or {}
+            if sizes:
+                urls.append(sizes[max(sizes, key=int)])
+        if urls:
+            sql.append(f"UPDATE strava_activities SET photos = {jsonb(urls)} WHERE id = {aid};")
+            rechecked += 1
+
     sql.append("COMMIT;")
     with open("/shared/apply.sql", "w") as f:
         f.write("\n".join(sql) + "\n")
-    print(f"prepared {loaded} activities (after={after})")
+    print(f"prepared {loaded} activities (after={after}); "
+          f"photo recheck: {rechecked}/{len(recheck_ids)} candidates had a new photo")
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -204,6 +235,8 @@ spec:
                     secretKeyRef:
                       name: postgis-credentials
                       key: POSTGRES_PASSWORD
+                - name: RECHECK_HOURS
+                  value: "48"
               command:
                 - sh
                 - -c
@@ -250,7 +283,8 @@ spec:
                   SQL
                   psql -h postgis -U gis -d gis -tAc "SELECT COALESCE((SELECT refresh_token FROM strava_auth WHERE id=1),'')" > /shared/refresh_token
                   psql -h postgis -U gis -d gis -tAc "SELECT COALESCE(EXTRACT(EPOCH FROM max(start_date))::bigint,0) FROM strava_activities" > /shared/after
-                  echo "state: after=$(cat /shared/after)"
+                  psql -h postgis -U gis -d gis -tAc "SELECT id FROM strava_activities WHERE start_date > now() - interval '${RECHECK_HOURS} hours' AND photos IS NULL ORDER BY start_date DESC" > /shared/recheck_ids
+                  echo "state: after=$(cat /shared/after), recheck candidates=$(wc -l < /shared/recheck_ids)"
               volumeMounts:
                 - name: shared
                   mountPath: /shared
