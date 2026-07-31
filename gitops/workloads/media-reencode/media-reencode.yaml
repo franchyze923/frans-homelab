@@ -174,9 +174,19 @@ data:
     heartbeat &
     # Re-fetch the queue after every file and take the biggest claimable
     # candidate: stays biggest-first as locks come and go, and stale locks
-    # from dead pods are retried within ~15 min instead of next pass.
+    # from dead pods are retried within ~15 min instead of next pass. The
+    # single fetch is reused for both the progress log line and the pick
+    # loop below, so this doesn't add extra Plex API traffic.
     while true; do
       picked=0
+      qfile="$STATE/tmp/queue.$$"
+      fetch_candidates > "$qfile"
+      remaining=0
+      while IFS='|' read -r _sz _kind src; do
+        [ -n "$src" ] || continue
+        listed "$src" || remaining=$((remaining + 1))
+      done < "$qfile"
+      log "progress: $(wc -l < "$DONE") done, $(wc -l < "$SKIP") skipped, $(wc -l < "$FAIL") failed -- $remaining/$(wc -l < "$qfile") legacy candidates still queued"
       while IFS='|' read -r _sz kind src; do
         [ -n "$src" ] || continue
         case "$src" in /media/*) ;; *) continue;; esac
@@ -188,7 +198,8 @@ data:
         rm -rf "$lock" 2>/dev/null
         picked=1
         break
-      done < <(fetch_candidates)
+      done < "$qfile"
+      rm -f "$qfile"
       if [ "$picked" = 0 ]; then
         log "no claimable candidates; sleeping 6h before re-checking library"
         sleep 21600
