@@ -327,11 +327,27 @@ data:
           (gps?'':' · no GPS')+'</span></span>';
         div.querySelector('.nm').textContent = p.name || 'Activity';
         if (gps) itemByFid[f.id] = div;
+        // viewer.flyTo(entity) blocks until Cesium recomputes the entity's
+        // bounding sphere -- and the selection restyle right before it
+        // invalidates that entity's geometry batch, so the camera would sit
+        // still until the rebatch finished. Precompute a sphere from the
+        // track's bbox instead and fly straight to it: starts instantly.
+        let sphere = null;
+        if (gps){
+          let minX=180, minY=90, maxX=-180, maxY=-90;
+          for (const c of f.geometry.coordinates){
+            if (c[0]<minX) minX=c[0]; if (c[0]>maxX) maxX=c[0];
+            if (c[1]<minY) minY=c[1]; if (c[1]>maxY) maxY=c[1];
+          }
+          sphere = Cesium.BoundingSphere.fromPoints(
+            Cesium.Cartesian3.fromDegreesArray([minX,minY, maxX,minY, maxX,maxY, minX,maxY]));
+        }
         div.onclick = () => {
           const e = byId[f.id];
           if (!e) return;
           viewer.selectedEntity = e;   // highlight + .sel via selection listener
-          viewer.flyTo(e, { duration: 1.6 });
+          if (sphere) viewer.camera.flyToBoundingSphere(sphere, { duration: 1.6 });
+          else viewer.flyTo(e, { duration: 1.6 });
         };
         return { div, fam, name:(p.name||'').toLowerCase(), fid:f.id, gps };
       });
@@ -375,7 +391,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "16"
+        checksum/config: "17"
     spec:
       containers:
         - name: nginx
