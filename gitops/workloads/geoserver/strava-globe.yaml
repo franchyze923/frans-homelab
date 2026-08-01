@@ -32,8 +32,9 @@ data:
         proxy_set_header Accept-Encoding "";
         proxy_cache tracks;
         proxy_cache_valid 200 10m;
-        proxy_ignore_headers Cache-Control Expires;
+        proxy_ignore_headers Cache-Control Expires Set-Cookie;
         proxy_hide_header Cache-Control;
+        proxy_hide_header Set-Cookie;
         proxy_cache_use_stale updating error timeout;
         proxy_cache_background_update on;
         proxy_cache_lock on;
@@ -47,8 +48,9 @@ data:
         proxy_set_header Accept-Encoding "";
         proxy_cache tracks;
         proxy_cache_valid 200 10m;
-        proxy_ignore_headers Cache-Control Expires;
+        proxy_ignore_headers Cache-Control Expires Set-Cookie;
         proxy_hide_header Cache-Control;
+        proxy_hide_header Set-Cookie;
         proxy_cache_use_stale updating error timeout;
         proxy_cache_background_update on;
         proxy_cache_lock on;
@@ -465,7 +467,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "18"
+        checksum/config: "19"
     spec:
       containers:
         - name: nginx
