@@ -163,44 +163,67 @@ the Secret, which only seeds the first run — so it's inside the nightly
 Cesium.js 3D viewer for the activities. Static page (ConfigMap) on stock
 nginx; no custom image. nginx proxies `/geoserver/` to the in-cluster
 service so the browser sees one origin (no CORS). Feeds on
-`strava:strava_activities_globe`, a `ST_SimplifyPreserveTopology(geom,
-0.000005)` view (~0.55m tolerance). History: originally `0.00005`
-(~5.5m) for a ~5x smaller payload, but that visibly cut corners on
-winding trails — dropped entirely 2026-08-01, which fixed the jaggedness
-but made the "fly to activity" sidebar click sluggish (1.6M total points
-across ~1000 tracks rendered as separate Cesium polyline entities is too
-much for the browser to animate smoothly). Landed on `0.000005` the same
-day: fine enough to only strip redundant near-duplicate GPS points on
-straight segments (invisible at any zoom), cuts total points to ~470k
-(~3.5x lighter than raw). If flyTo is still sluggish or payload grows
-with more activities, next lever is a coarser tolerance (`0.00001` →
-~340k pts, `0.00002` → ~255k pts) before reaching for something more
-invasive like per-entity bounding-sphere precomputation or batching
-polylines into a `PolylineCollection`. Cesium + OSM tiles come from CDNs
+`strava:strava_activities_globe`, a **materialized** view applying
+`ST_SimplifyPreserveTopology(geom, 0.000005)` (~0.55m tolerance),
+refreshed by the hourly strava-sync apply container (`REFRESH
+MATERIALIZED VIEW CONCURRENTLY`; needs the unique index on `id`).
+History (all 2026-08-01): tolerance was originally `0.00005` (~5.5m),
+which visibly cut corners; dropping simplification entirely fixed shape
+but exposed that a plain view re-ran the 5-6s simplify on every page
+load (12s WFS response) and 1.6M points made Cesium sluggish. Landed on
+`0.000005` (only strips redundant near-duplicate GPS points, ~470k pts
+total, ~3.5x lighter than raw) + materialization (WFS ~1.5-3s). NB the
+*dominant* cause of blocky tracks turned out to be GeoServer's 4-decimal
+GeoJSON default, not the tolerance — see the precision gotcha below. If
+flyTo gets sluggish as activities grow, next lever is a coarser
+tolerance (`0.00001` → ~340k pts, `0.00002` → ~255k pts) before
+anything invasive like batching into a `PolylineCollection`.
+Cesium + OSM tiles come from CDNs
 (no ion token — add one + world terrain later if 3D relief is wanted).
 Clicking a track shows its infoBox; if the activity has photos they
 render as a thumbnail strip that links out to the full-size Strava CDN
 image.
 
+**Coordinate precision gotcha (fixed 2026-08-01):** GeoServer's GeoJSON
+encoder defaults to **4 decimal places** (~11m grid) unless the feature
+type sets `numDecimals` — this quantization made tracks look blocky no
+matter how fine the view's simplify tolerance was (and got *worse* with
+denser points: sub-grid spacing renders as staircase zigzag). All three
+strava layers (`strava_activities_globe`, `strava_activities`,
+`strava_tracks`) now have `numDecimals=6` (~0.11m) set via REST:
+
+```sh
+curl -u admin:<pw> -X PUT \
+  ".../rest/workspaces/strava/datastores/postgis/featuretypes/<layer>" \
+  -H "Content-type: text/xml" -d '<featureType><numDecimals>6</numDecimals></featureType>'
+```
+
+Persisted in the geoserver data dir (covered by its backup); a minimal
+`recalculate` PUT (below) merges and does NOT clobber it. Recreate any
+new layer with this in mind. Cost: gzipped globe payload 1.1MB → 2.8MB
+(precise digits compress worse).
+
 **Manual step after adding a column to `strava_activities`** (e.g. `photos`):
-`strava_activities_globe` is a plain PostgreSQL view (`\d+
-strava_activities_globe` / `pg_get_viewdef`), not a GeoServer virtual table —
+`strava_activities_globe` is a PostgreSQL **materialized view**
+(`pg_get_viewdef` still shows its query), not a GeoServer virtual table —
 GeoServer just introspects it, so there's no GeoServer-side SQL to edit.
-Update it directly against `postgis`:
+Materialized views have no `CREATE OR REPLACE`, so it's drop + recreate
+directly against `postgis` (the unique index is required by the sync
+job's `REFRESH ... CONCURRENTLY` — don't skip it):
 
 ```sql
-CREATE OR REPLACE VIEW strava_activities_globe AS
+DROP MATERIALIZED VIEW strava_activities_globe;
+CREATE MATERIALIZED VIEW strava_activities_globe AS
 SELECT id, name, sport_type, start_date, distance_m, moving_time_s,
        elapsed_time_s, elev_gain_m, avg_speed_ms, max_speed_ms, avg_hr,
        max_hr, avg_watts, kudos,
        ST_SimplifyPreserveTopology(geom, 0.000005)::geometry(LineString,4326) AS geom,
-       <new_column>
+       photos, <new_column>
 FROM strava_activities;
+CREATE UNIQUE INDEX strava_activities_globe_id_idx ON strava_activities_globe (id);
 ```
 
-`CREATE OR REPLACE VIEW` only allows new output columns appended at the
-*end* of the SELECT list (Postgres rejects reordering/inserting), so new
-columns land after `geom` regardless of where they sit in the table. Then
+Then
 tell GeoServer to pick up the new attribute and drop its cache:
 
 ```sh
