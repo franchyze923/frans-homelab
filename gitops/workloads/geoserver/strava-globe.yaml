@@ -78,6 +78,11 @@ data:
         position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
         background:var(--surface); color:var(--ink-2); font-size:14px; z-index:10;
       }
+      #trackLoading {
+        position:absolute; top:10px; left:346px; z-index:10; background:#fff; color:var(--ink-2);
+        font-size:12px; padding:5px 10px; border-radius:999px; box-shadow:0 1px 6px rgba(0,0,0,.15);
+      }
+      @media (max-width:700px) { #trackLoading { left:10px; } }
       @media (max-width:700px) {
         #side { position:absolute; height:45%; bottom:0; width:100%; min-width:0; border-right:none; border-top:1px solid var(--line); }
         #globe { position:absolute; inset:0; }
@@ -99,7 +104,8 @@ data:
       <div id="list"></div>
     </div>
     <div id="globe"></div>
-    <div id="loading">Loading activities…</div>
+    <div id="loading">Loading globe…</div>
+    <div id="trackLoading" style="display:none">Loading tracks…</div>
     <script>
     const WFS = '/geoserver/strava/ows?service=WFS&version=2.0.0&request=GetFeature'
       + '&typeNames=strava:strava_activities_globe&outputFormat=application/json';
@@ -160,6 +166,10 @@ data:
     }
 
     async function main(){
+      // kick both off immediately -- ion token is tiny/local, WFS is the
+      // slow one (~1.5s materialized-view read + ~9MB JSON); no reason to
+      // make the globe wait on the tracks before it can render/pan/zoom
+      const wfsPromise = fetch(WFS).then(r => r.json());
       // ion token (served from a k8s Secret; empty = flat ellipsoid, no ion)
       const ionToken = (await fetch('/cesium-token').then(r => r.ok ? r.text() : '')
         .catch(() => '')).trim();
@@ -216,7 +226,12 @@ data:
         console.error('cesium renderError', err);
       });
 
-      const gj = await (await fetch(WFS)).json();
+      // globe itself is interactive now (pan/zoom/basemap) -- drop the
+      // full-screen overlay and let tracks stream in behind a small badge
+      document.getElementById('loading').remove();
+      document.getElementById('trackLoading').style.display = '';
+
+      const gj = await wfsPromise;
       const feats = gj.features || [];
       feats.sort((a,b) => new Date(b.properties.start_date) - new Date(a.properties.start_date));
       const withGeom = { type:'FeatureCollection',
@@ -240,17 +255,33 @@ data:
         byId[e.id] = e;
       }
 
-      // selection = bold track + everything else fades; sidebar stays in sync
+      // selection = bold track + everything else fades; sidebar stays in sync.
+      // Restyling all ~1000 polylines on every click made flyTo feel sluggish
+      // (synchronous material/width touch on the whole collection right
+      // before the camera animation starts) -- fade everyone once on the
+      // first selection, then only touch the previous + newly selected
+      // entity on subsequent clicks.
       const itemByFid = {};
+      const styleOf = e => Cesium.Color.fromCssColorString(COLORS[e._fam]);
+      const styleDefault = e => { e.polyline.material = styleOf(e); e.polyline.width = 3; };
+      const styleSelected = e => { e.polyline.material = styleOf(e); e.polyline.width = 6; };
+      const styleFaded = e => { e.polyline.material = styleOf(e).withAlpha(0.22); e.polyline.width = 2; };
+      let faded = false, prevSel = null;
       viewer.selectedEntityChanged.addEventListener(() => {
         const sel = viewer.selectedEntity && viewer.selectedEntity.polyline
           ? viewer.selectedEntity : null;
-        for (const e of ds.entities.values){
-          if (!e.polyline) continue;
-          const c = Cesium.Color.fromCssColorString(COLORS[e._fam]);
-          if (!sel)            { e.polyline.material = c; e.polyline.width = 3; }
-          else if (e === sel)  { e.polyline.material = c; e.polyline.width = 6; }
-          else { e.polyline.material = c.withAlpha(0.22); e.polyline.width = 2; }
+        if (!sel){
+          if (faded){ for (const e of ds.entities.values) if (e.polyline) styleDefault(e); faded = false; }
+          prevSel = null;
+        } else {
+          if (!faded){
+            for (const e of ds.entities.values) if (e.polyline) styleFaded(e);
+            faded = true;
+          } else if (prevSel && prevSel !== sel){
+            styleFaded(prevSel);
+          }
+          styleSelected(sel);
+          prevSel = sel;
         }
         document.querySelectorAll('.item.sel').forEach(x => x.classList.remove('sel'));
         const div = sel && itemByFid[sel.id];
@@ -315,10 +346,11 @@ data:
         }
       }
 
-      document.getElementById('loading').remove();
+      document.getElementById('trackLoading').remove();
     }
     main().catch(err => {
-      document.getElementById('loading').textContent = 'Failed to load: ' + err;
+      const l = document.getElementById('loading') || document.getElementById('trackLoading');
+      if (l) l.textContent = 'Failed to load: ' + err;
     });
     </script>
     </body>
@@ -343,7 +375,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "15"
+        checksum/config: "16"
     spec:
       containers:
         - name: nginx

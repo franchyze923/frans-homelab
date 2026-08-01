@@ -164,11 +164,23 @@ Cesium.js 3D viewer for the activities. Static page (ConfigMap) on stock
 nginx; no custom image. nginx proxies `/geoserver/` to the in-cluster
 service so the browser sees one origin (no CORS). Feeds on
 `strava:strava_activities_globe`, a `ST_SimplifyPreserveTopology(geom,
-0.00005)` view (~5x smaller payload; full-res geometry stays in
-`strava_activities`). Cesium + OSM tiles come from CDNs (no ion token —
-add one + world terrain later if 3D relief is wanted). Clicking a track
-shows its infoBox; if the activity has photos they render as a thumbnail
-strip that links out to the full-size Strava CDN image.
+0.000005)` view (~0.55m tolerance). History: originally `0.00005`
+(~5.5m) for a ~5x smaller payload, but that visibly cut corners on
+winding trails — dropped entirely 2026-08-01, which fixed the jaggedness
+but made the "fly to activity" sidebar click sluggish (1.6M total points
+across ~1000 tracks rendered as separate Cesium polyline entities is too
+much for the browser to animate smoothly). Landed on `0.000005` the same
+day: fine enough to only strip redundant near-duplicate GPS points on
+straight segments (invisible at any zoom), cuts total points to ~470k
+(~3.5x lighter than raw). If flyTo is still sluggish or payload grows
+with more activities, next lever is a coarser tolerance (`0.00001` →
+~340k pts, `0.00002` → ~255k pts) before reaching for something more
+invasive like per-entity bounding-sphere precomputation or batching
+polylines into a `PolylineCollection`. Cesium + OSM tiles come from CDNs
+(no ion token — add one + world terrain later if 3D relief is wanted).
+Clicking a track shows its infoBox; if the activity has photos they
+render as a thumbnail strip that links out to the full-size Strava CDN
+image.
 
 **Manual step after adding a column to `strava_activities`** (e.g. `photos`):
 `strava_activities_globe` is a plain PostgreSQL view (`\d+
@@ -181,7 +193,7 @@ CREATE OR REPLACE VIEW strava_activities_globe AS
 SELECT id, name, sport_type, start_date, distance_m, moving_time_s,
        elapsed_time_s, elev_gain_m, avg_speed_ms, max_speed_ms, avg_hr,
        max_hr, avg_watts, kudos,
-       ST_SimplifyPreserveTopology(geom, 0.00005)::geometry(LineString,4326) AS geom,
+       ST_SimplifyPreserveTopology(geom, 0.000005)::geometry(LineString,4326) AS geom,
        <new_column>
 FROM strava_activities;
 ```

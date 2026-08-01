@@ -15,6 +15,12 @@
 # run (rate limits); it catches up across daily runs, or run it by hand:
 #   kubectl -n geoserver create job --from=cronjob/strava-sync strava-sync-now
 #
+# The apply container also refreshes strava_activities_globe (materialized
+# view feeding the tracks.franpolignano.com globe -- see geoserver README):
+# ST_SimplifyPreserveTopology over ~1.6M raw points took 5-6s, which used to
+# run on *every* page load since it was a plain view. Materializing it once
+# per sync run instead cut the globe's WFS request from ~12s to ~1.5s.
+#
 # Metadata recheck: the "new activities" list only looks at start_date > the
 # newest one already synced, so an activity is only ever inspected once. Two
 # things commonly change after that first sync: a photo gets attached (you
@@ -334,7 +340,7 @@ spec:
                     secretKeyRef:
                       name: postgis-credentials
                       key: POSTGRES_PASSWORD
-              command: ['sh', '-c', 'psql -h postgis -U gis -d gis -v ON_ERROR_STOP=1 -q -f /shared/apply.sql && psql -h postgis -U gis -d gis -tAc "SELECT count(*) || '' activities total, newest: '' || COALESCE(max(start_date)::text, ''none'') FROM strava_activities"']
+              command: ['sh', '-c', 'psql -h postgis -U gis -d gis -v ON_ERROR_STOP=1 -q -f /shared/apply.sql && psql -h postgis -U gis -d gis -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY strava_activities_globe;" && psql -h postgis -U gis -d gis -tAc "SELECT count(*) || '' activities total, newest: '' || COALESCE(max(start_date)::text, ''none'') FROM strava_activities"']
               volumeMounts:
                 - name: shared
                   mountPath: /shared
