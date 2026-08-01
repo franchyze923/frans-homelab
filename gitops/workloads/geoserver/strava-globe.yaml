@@ -10,15 +10,51 @@ metadata:
   namespace: geoserver
 data:
   default.conf: |
+    # tracks cache: page loads shouldn't pay GeoServer's WFS encode (~1.5-3s
+    # for ~1000 tracks). Stale entries are served instantly and refreshed in
+    # the background; browsers additionally cache for 10 min, so a freshly
+    # synced activity can take up to ~20 min after the hourly sync to appear.
+    proxy_cache_path /var/cache/nginx/tracks levels=1 keys_zone=tracks:1m
+                     max_size=200m inactive=7d use_temp_path=off;
     server {
       listen 80;
       root /usr/share/nginx/html;
       gzip on;
       gzip_proxied any;
+      gzip_vary on;
       gzip_types application/json application/javascript text/css;
       location = / { try_files /index.html =404; }
       # ion token from Secret cesium-ion (not in git); 404 if secret absent
       location = /cesium-token { default_type text/plain; alias /globe-secret/token; }
+      location = /tracks.json {
+        proxy_pass http://geoserver:8080/geoserver/strava/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=strava:strava_activities_globe&outputFormat=application/json;
+        proxy_set_header Host geoserver.franpolignano.com;
+        proxy_set_header Accept-Encoding "";
+        proxy_cache tracks;
+        proxy_cache_valid 200 10m;
+        proxy_ignore_headers Cache-Control Expires;
+        proxy_hide_header Cache-Control;
+        proxy_cache_use_stale updating error timeout;
+        proxy_cache_background_update on;
+        proxy_cache_lock on;
+        add_header X-Cache-Status $upstream_cache_status always;
+        add_header Cache-Control "public, max-age=600, stale-while-revalidate=3600";
+      }
+      # newest 150 for fast first paint (index.html loads this, then the rest)
+      location = /tracks-recent.json {
+        proxy_pass http://geoserver:8080/geoserver/strava/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=strava:strava_activities_globe&outputFormat=application/json&sortBy=start_date+D&count=150;
+        proxy_set_header Host geoserver.franpolignano.com;
+        proxy_set_header Accept-Encoding "";
+        proxy_cache tracks;
+        proxy_cache_valid 200 10m;
+        proxy_ignore_headers Cache-Control Expires;
+        proxy_hide_header Cache-Control;
+        proxy_cache_use_stale updating error timeout;
+        proxy_cache_background_update on;
+        proxy_cache_lock on;
+        add_header X-Cache-Status $upstream_cache_status always;
+        add_header Cache-Control "public, max-age=600, stale-while-revalidate=3600";
+      }
       location /geoserver/ {
         proxy_pass http://geoserver:8080;
         proxy_set_header Host geoserver.franpolignano.com;
@@ -107,8 +143,10 @@ data:
     <div id="loading">Loading globe…</div>
     <div id="trackLoading" style="display:none">Loading tracks…</div>
     <script>
-    const WFS = '/geoserver/strava/ows?service=WFS&version=2.0.0&request=GetFeature'
-      + '&typeNames=strava:strava_activities_globe&outputFormat=application/json';
+    // nginx proxy-cache locations in front of the GeoServer WFS (see
+    // default.conf): recent = newest 150 for a fast first paint.
+    const WFS_RECENT = '/tracks-recent.json';
+    const WFS_FULL = '/tracks.json';
     // Fixed sport->color mapping (validated categorical palette; gray = Other)
     const FAMILIES = ['Run','Ride','Walk','Hike','Swim','Other'];
     const COLORS = { Run:'#2a78d6', Ride:'#1baf7a', Walk:'#eda100',
@@ -166,10 +204,11 @@ data:
     }
 
     async function main(){
-      // kick both off immediately -- ion token is tiny/local, WFS is the
-      // slow one (~1.5s materialized-view read + ~9MB JSON); no reason to
-      // make the globe wait on the tracks before it can render/pan/zoom
-      const wfsPromise = fetch(WFS).then(r => r.json());
+      // kick both track fetches off immediately -- served from nginx's
+      // proxy cache so they're fast, and the globe doesn't wait on them
+      // before it can render/pan/zoom
+      const recentPromise = fetch(WFS_RECENT).then(r => r.json());
+      const fullPromise = fetch(WFS_FULL).then(r => r.json());
       // ion token (served from a k8s Secret; empty = flat ellipsoid, no ion)
       const ionToken = (await fetch('/cesium-token').then(r => r.ok ? r.text() : '')
         .catch(() => '')).trim();
@@ -231,29 +270,12 @@ data:
       document.getElementById('loading').remove();
       document.getElementById('trackLoading').style.display = '';
 
-      const gj = await wfsPromise;
-      const feats = gj.features || [];
-      feats.sort((a,b) => new Date(b.properties.start_date) - new Date(a.properties.start_date));
-      const withGeom = { type:'FeatureCollection',
-        features: feats.filter(f => f.geometry && f.geometry.coordinates?.length > 1) };
-
-      // with terrain, drape tracks on it (else they hide inside mountains);
-      // without, plain polylines -- ground polylines need capable WebGL
-      const ds = await Cesium.GeoJsonDataSource.load(withGeom, { clampToGround: !!ionToken });
-      viewer.dataSources.add(ds);
+      // two-stage load state: newest 150 first, then the rest as a second
+      // GeoJsonDataSource batch (see addBatch below)
+      const dataSources = [];
       const byId = {};
-      for (const e of ds.entities.values){
-        const props = {}; for (const k of e.properties.propertyNames) props[k] = e.properties[k].getValue();
-        const fam = family(props.sport_type);
-        if (e.polyline){
-          e.polyline.material = Cesium.Color.fromCssColorString(COLORS[fam]);
-          e.polyline.width = 3;
-        }
-        e._fam = fam;
-        e.name = props.name || 'Activity';
-        e.description = describe(props, fam);
-        byId[e.id] = e;
-      }
+      let feats = [];   // all loaded features, newest first
+      const eachEntity = fn => { for (const d of dataSources) for (const e of d.entities.values) if (e.polyline) fn(e); };
 
       // selection = bold track + everything else fades; sidebar stays in sync.
       // Restyling all ~1000 polylines on every click made flyTo feel sluggish
@@ -271,11 +293,11 @@ data:
         const sel = viewer.selectedEntity && viewer.selectedEntity.polyline
           ? viewer.selectedEntity : null;
         if (!sel){
-          if (faded){ for (const e of ds.entities.values) if (e.polyline) styleDefault(e); faded = false; }
+          if (faded){ eachEntity(styleDefault); faded = false; }
           prevSel = null;
         } else {
           if (!faded){
-            for (const e of ds.entities.values) if (e.polyline) styleFaded(e);
+            eachEntity(styleFaded);
             faded = true;
           } else if (prevSel && prevSel !== sel){
             styleFaded(prevSel);
@@ -288,70 +310,38 @@ data:
         if (div){ div.classList.add('sel'); div.scrollIntoView({block:'nearest'}); }
       });
 
-      // --- sidebar
+      // --- sidebar + batched track loading
       const on = Object.fromEntries(FAMILIES.map(f => [f, true]));
       let query = '';
-      const counts = {}; let totalM = 0;
-      const years = new Set();
-      for (const f of feats){
-        const fam = family(f.properties.sport_type);
-        counts[fam] = (counts[fam]||0) + 1;
-        totalM += f.properties.distance_m || 0;
-        if (f.properties.start_date) years.add(new Date(f.properties.start_date).getFullYear());
-      }
-      document.getElementById('stN').textContent = feats.length.toLocaleString();
-      document.getElementById('stKm').textContent = Math.round(totalM/MI).toLocaleString();
-      document.getElementById('stYr').textContent = years.size;
-
-      const chips = document.getElementById('chips');
-      for (const f of FAMILIES.filter(f => counts[f])){
-        const b = document.createElement('button');
-        b.className = 'chip';
-        b.innerHTML = '<span class="dot" style="background:'+COLORS[f]+'"></span>'+f+
-                      ' <span class="n">'+counts[f]+'</span>';
-        b.onclick = () => { on[f] = !on[f]; b.classList.toggle('off', !on[f]); refresh(); };
-        chips.appendChild(b);
-      }
-      document.getElementById('search').addEventListener('input',
-        e => { query = e.target.value.toLowerCase(); refresh(); });
-
       const list = document.getElementById('list');
-      const items = feats.map(f => {
-        const p = f.properties, fam = family(p.sport_type);
-        const div = document.createElement('div');
-        const gps = f.geometry && f.geometry.coordinates?.length > 1;
-        div.className = 'item' + (gps ? '' : ' nogps');
-        div.innerHTML = '<span class="dot" style="background:'+COLORS[fam]+'"></span>'+
-          '<span class="meta"><span class="nm"></span>'+
-          '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtMi(p.distance_m)||fmtDur(p.moving_time_s))+
-          (gps?'':' · no GPS')+'</span></span>';
-        div.querySelector('.nm').textContent = p.name || 'Activity';
-        if (gps) itemByFid[f.id] = div;
-        // viewer.flyTo(entity) blocks until Cesium recomputes the entity's
-        // bounding sphere -- and the selection restyle right before it
-        // invalidates that entity's geometry batch, so the camera would sit
-        // still until the rebatch finished. Precompute a sphere from the
-        // track's bbox instead and fly straight to it: starts instantly.
-        let sphere = null;
-        if (gps){
-          let minX=180, minY=90, maxX=-180, maxY=-90;
-          for (const c of f.geometry.coordinates){
-            if (c[0]<minX) minX=c[0]; if (c[0]>maxX) maxX=c[0];
-            if (c[1]<minY) minY=c[1]; if (c[1]>maxY) maxY=c[1];
-          }
-          sphere = Cesium.BoundingSphere.fromPoints(
-            Cesium.Cartesian3.fromDegreesArray([minX,minY, maxX,minY, maxX,maxY, minX,maxY]));
+      const chips = document.getElementById('chips');
+      const chipCounts = {};
+      const items = [];
+
+      function updateStats(){
+        const counts = {}; let totalM = 0; const years = new Set();
+        for (const f of feats){
+          const fam = family(f.properties.sport_type);
+          counts[fam] = (counts[fam]||0) + 1;
+          totalM += f.properties.distance_m || 0;
+          if (f.properties.start_date) years.add(new Date(f.properties.start_date).getFullYear());
         }
-        div.onclick = () => {
-          const e = byId[f.id];
-          if (!e) return;
-          viewer.selectedEntity = e;   // highlight + .sel via selection listener
-          if (sphere) viewer.camera.flyToBoundingSphere(sphere, { duration: 1.6 });
-          else viewer.flyTo(e, { duration: 1.6 });
-        };
-        return { div, fam, name:(p.name||'').toLowerCase(), fid:f.id, gps };
-      });
-      for (const it of items) list.appendChild(it.div);
+        document.getElementById('stN').textContent = feats.length.toLocaleString();
+        document.getElementById('stKm').textContent = Math.round(totalM/MI).toLocaleString();
+        document.getElementById('stYr').textContent = years.size;
+        for (const f of FAMILIES.filter(f => counts[f])){
+          if (!chipCounts[f]){
+            const b = document.createElement('button');
+            b.className = 'chip';
+            b.innerHTML = '<span class="dot" style="background:'+COLORS[f]+'"></span>'+f+
+                          ' <span class="n"></span>';
+            b.onclick = () => { on[f] = !on[f]; b.classList.toggle('off', !on[f]); refresh(); };
+            chips.appendChild(b);
+            chipCounts[f] = b.querySelector('.n');
+          }
+          chipCounts[f].textContent = counts[f];
+        }
+      }
 
       function refresh(){
         for (const it of items){
@@ -361,8 +351,92 @@ data:
           if (e) e.show = show;
         }
       }
+      document.getElementById('search').addEventListener('input',
+        e => { query = e.target.value.toLowerCase(); refresh(); });
 
-      document.getElementById('trackLoading').remove();
+      async function addBatch(batch){
+        // with terrain, drape tracks on it (else they hide inside mountains);
+        // without, plain polylines -- ground polylines need capable WebGL
+        const withGeom = batch.filter(f => f.geometry && f.geometry.coordinates?.length > 1);
+        if (withGeom.length){
+          const ds = await Cesium.GeoJsonDataSource.load(
+            { type:'FeatureCollection', features: withGeom },
+            { clampToGround: !!ionToken });
+          viewer.dataSources.add(ds);
+          dataSources.push(ds);
+          for (const e of ds.entities.values){
+            const props = {}; for (const k of e.properties.propertyNames) props[k] = e.properties[k].getValue();
+            e._fam = family(props.sport_type);
+            if (e.polyline){
+              // a late batch can arrive mid-selection: match the current fade
+              if (faded && viewer.selectedEntity) styleFaded(e); else styleDefault(e);
+            }
+            e.name = props.name || 'Activity';
+            e.description = describe(props, e._fam);
+            byId[e.id] = e;
+          }
+        }
+        for (const f of batch){
+          const p = f.properties, fam = family(p.sport_type);
+          const div = document.createElement('div');
+          const gps = f.geometry && f.geometry.coordinates?.length > 1;
+          div.className = 'item' + (gps ? '' : ' nogps');
+          div.innerHTML = '<span class="dot" style="background:'+COLORS[fam]+'"></span>'+
+            '<span class="meta"><span class="nm"></span>'+
+            '<span class="sub">'+fmtDate(p.start_date)+' · '+(fmtMi(p.distance_m)||fmtDur(p.moving_time_s))+
+            (gps?'':' · no GPS')+'</span></span>';
+          div.querySelector('.nm').textContent = p.name || 'Activity';
+          if (gps) itemByFid[f.id] = div;
+          // viewer.flyTo(entity) blocks until Cesium recomputes the entity's
+          // bounding sphere -- and the selection restyle right before it
+          // invalidates that entity's geometry batch, so the camera would sit
+          // still until the rebatch finished. Precompute a sphere from the
+          // track's bbox instead and fly straight to it: starts instantly.
+          let sphere = null;
+          if (gps){
+            let minX=180, minY=90, maxX=-180, maxY=-90;
+            for (const c of f.geometry.coordinates){
+              if (c[0]<minX) minX=c[0]; if (c[0]>maxX) maxX=c[0];
+              if (c[1]<minY) minY=c[1]; if (c[1]>maxY) maxY=c[1];
+            }
+            sphere = Cesium.BoundingSphere.fromPoints(
+              Cesium.Cartesian3.fromDegreesArray([minX,minY, maxX,minY, maxX,maxY, minX,maxY]));
+          }
+          div.onclick = () => {
+            const e = byId[f.id];
+            if (!e) return;
+            viewer.selectedEntity = e;   // highlight + .sel via selection listener
+            if (sphere) viewer.camera.flyToBoundingSphere(sphere, { duration: 1.6 });
+            else viewer.flyTo(e, { duration: 1.6 });
+          };
+          items.push({ div, fam, name:(p.name||'').toLowerCase(), fid:f.id, gps });
+          list.appendChild(div);
+        }
+        refresh();   // apply any active search/chip filter to the new rows
+      }
+
+      // --- the two stages; dedupe by activity id (WFS feature ids are not
+      // stable across responses, properties.id is the strava id)
+      const badge = document.getElementById('trackLoading');
+      const byDateDesc = (a,b) => new Date(b.properties.start_date) - new Date(a.properties.start_date);
+      try {
+        const recent = (await recentPromise).features || [];
+        recent.sort(byDateDesc);
+        feats = recent;
+        await addBatch(recent);
+        updateStats();
+        badge.textContent = 'Loading older tracks…';
+      } catch (err){
+        console.warn('recent-tracks fetch failed; falling back to the full load', err);
+      }
+      const all = (await fullPromise).features || [];
+      const seenIds = new Set(feats.map(f => f.properties.id));
+      const rest = all.filter(f => !seenIds.has(f.properties.id));
+      rest.sort(byDateDesc);
+      feats = feats.concat(rest);
+      await addBatch(rest);
+      updateStats();
+      badge.remove();
     }
     main().catch(err => {
       const l = document.getElementById('loading') || document.getElementById('trackLoading');
@@ -391,7 +465,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "17"
+        checksum/config: "18"
     spec:
       containers:
         - name: nginx
@@ -422,6 +496,8 @@ spec:
             - name: ion-token
               mountPath: /globe-secret
               readOnly: true
+            - name: cache
+              mountPath: /var/cache/nginx
       volumes:
         - name: site
           configMap:
@@ -430,6 +506,8 @@ spec:
           secret:
             secretName: cesium-ion
             optional: true
+        - name: cache
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
