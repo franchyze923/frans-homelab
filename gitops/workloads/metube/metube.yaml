@@ -123,6 +123,12 @@ spec:
               value: /media/music
             - name: STATE_DIR
               value: /config
+            # Cap concurrent yt-dlp downloads — a big playlist with 3+ parallel
+            # downloads (each yt-dlp + ffmpeg mux) is what OOM-killed the 512Mi pod
+            - name: DOWNLOAD_MODE
+              value: limited
+            - name: MAX_CONCURRENT_DOWNLOADS
+              value: "2"
           volumeMounts:
             - name: config
               mountPath: /config
@@ -130,11 +136,11 @@ spec:
               mountPath: /media
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "250m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
       volumes:
         - name: config
           persistentVolumeClaim:
