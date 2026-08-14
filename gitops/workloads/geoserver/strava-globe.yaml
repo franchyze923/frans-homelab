@@ -121,6 +121,19 @@ data:
         font-size:12px; padding:5px 10px; border-radius:999px; box-shadow:0 1px 6px rgba(0,0,0,.15);
       }
       @media (max-width:700px) { #trackLoading { left:10px; } }
+      /* below Cesium's top-right toolbar; styled to match its dark widgets */
+      #zoomCtl {
+        position:absolute; right:6px; top:46px; z-index:10;
+        display:flex; flex-direction:column;
+      }
+      #zoomCtl button {
+        width:32px; height:32px; font-size:20px; line-height:1; padding:0;
+        background:rgba(48,51,54,.85); color:#edffff; border:1px solid #444;
+        cursor:pointer; font-family:inherit; touch-action:none; user-select:none;
+      }
+      #zoomCtl button:first-child { border-radius:6px 6px 0 0; }
+      #zoomCtl button:last-child { border-radius:0 0 6px 6px; border-top:none; }
+      #zoomCtl button:hover { background:rgba(72,84,96,.95); }
       @media (max-width:700px) {
         #side { position:absolute; height:45%; bottom:0; width:100%; min-width:0; border-right:none; border-top:1px solid var(--line); }
         #globe { position:absolute; inset:0; }
@@ -144,6 +157,10 @@ data:
     <div id="globe"></div>
     <div id="loading">Loading globe…</div>
     <div id="trackLoading" style="display:none">Loading tracks…</div>
+    <div id="zoomCtl">
+      <button id="zoomIn" aria-label="Zoom in">+</button>
+      <button id="zoomOut" aria-label="Zoom out">&minus;</button>
+    </div>
     <script>
     // nginx proxy-cache locations in front of the GeoServer WFS (see
     // default.conf): recent = newest 150 for a fast first paint.
@@ -254,6 +271,23 @@ data:
         selectionIndicator:false,
       });
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#dfe8ef');
+      // mac trackpads send high-resolution wheel deltas with momentum, so the
+      // default zoom is jumpy and keeps drifting after fingers lift
+      const camCtl = viewer.scene.screenSpaceCameraController;
+      camCtl.inertiaZoom = 0;                 // no post-gesture zoom drift
+      camCtl._zoomFactor = 3;                 // default 5: gentler per-tick zoom
+      camCtl.maximumZoomDistance = 30000000;  // stop zooming out into empty space
+      // Safari (macOS) delivers trackpad pinch as gesture* events, not
+      // ctrl+wheel -- without this a pinch zooms the page, not the globe
+      const globeEl = document.getElementById('globe');
+      let pinchScale = 1;
+      globeEl.addEventListener('gesturestart', e => { e.preventDefault(); pinchScale = e.scale; });
+      globeEl.addEventListener('gesturechange', e => {
+        e.preventDefault();
+        const d = e.scale - pinchScale; pinchScale = e.scale;
+        if (d) viewer.camera.zoomIn(viewer.camera.positionCartographic.height * d);
+      });
+      globeEl.addEventListener('gestureend', e => e.preventDefault());
       if (ionToken) viewer.scene.setTerrain(Cesium.Terrain.fromWorldTerrain());
       // start centered on the US, pulled back far enough to see the whole globe face
       viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(-98.5, 39.8, 20000000) });
@@ -266,6 +300,25 @@ data:
         document.body.appendChild(d);
         console.error('cesium renderError', err);
       });
+
+      // on-screen zoom buttons: a click is one step, press-and-hold repeats.
+      // Steps scale with altitude so they feel even at any height; the camera
+      // API ignores maximumZoomDistance, hence the manual zoom-out clamp.
+      const zoomStep = dir => {
+        const h = viewer.camera.positionCartographic.height;
+        if (dir > 0) viewer.camera.zoomIn(h * 0.4);
+        else if (h < 30000000) viewer.camera.zoomOut(h * 0.67);
+      };
+      for (const [id, dir] of [['zoomIn', 1], ['zoomOut', -1]]){
+        const b = document.getElementById(id);
+        let t = null;
+        const stop = () => { if (t){ clearInterval(t); t = null; } };
+        b.addEventListener('pointerdown', e => {
+          e.preventDefault(); zoomStep(dir);
+          t = setInterval(() => zoomStep(dir), 160);
+        });
+        for (const ev of ['pointerup','pointerleave','pointercancel']) b.addEventListener(ev, stop);
+      }
 
       // globe itself is interactive now (pan/zoom/basemap) -- drop the
       // full-screen overlay and let tracks stream in behind a small badge
@@ -467,7 +520,7 @@ spec:
       annotations:
         # subPath ConfigMap mounts don't live-update: bump this counter in the
         # same commit as any index.html/default.conf change to roll the pod
-        checksum/config: "19"
+        checksum/config: "20"
     spec:
       containers:
         - name: nginx
