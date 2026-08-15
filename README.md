@@ -1,12 +1,12 @@
 # frans-homelab
 
-<img src="docs/images/homelab.jpg" width="600" alt="The rack">
-
 My homelab, in one repo. Anything I tinker with in the lab lands here — a lot of
 it happens to be the Kubernetes cluster and the apps that run on it, but the lab
 is bigger than the cluster: the bare-metal fleet underneath, the network, radios
 (LoRa mesh + ham), SBCs, and whatever else is on the bench this month (see
 [Misc tech](#misc-tech)).
+
+<img src="docs/images/homelab.jpg" width="600" alt="The rack">
 
 The Kubernetes side — the biggest ongoing project here — has two layers:
 
