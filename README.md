@@ -2,9 +2,13 @@
 
 <img src="docs/images/homelab.jpg" width="600" alt="The rack">
 
-Everything that builds and runs my homelab Kubernetes cluster, in one repo.
+My homelab, in one repo. Anything I tinker with in the lab lands here — a lot of
+it happens to be the Kubernetes cluster and the apps that run on it, but the lab
+is bigger than the cluster: the bare-metal fleet underneath, the network, radios
+(LoRa mesh + ham), SBCs, and whatever else is on the bench this month (see
+[Misc tech](#misc-tech)).
 
-It has two layers:
+The Kubernetes side — the biggest ongoing project here — has two layers:
 
 | Layer | Directory | What it does | Changes |
 |---|---|---|---|
@@ -21,8 +25,12 @@ frans-homelab/
 │   ├── apps/           #   one Argo CD Application per app (root: app-of-apps.yaml)
 │   ├── workloads/      #   the actual k8s manifests each Application points at
 │   └── README.md       #   full GitOps + ops-runbook docs
-└── README.md           # you are here
+├── docs/               # photos + notes
+└── README.md           # you are here — hardware inventory, network, misc tech
 ```
+
+Non-Kubernetes tinkering (Meshtastic, SBCs, one-off experiments) lives in this
+README for now and gets its own directories as projects grow legs.
 
 > **Bootstrap order:** `cluster/` builds the cluster **and installs Argo CD**, then points Argo CD at `gitops/apps`, which deploys everything else. So: **cluster first, GitOps second.**
 
@@ -170,6 +178,64 @@ via `ceph-mon=true` node labels to one per physical machine. ⚠️ CephCluster
 runs `useAllNodes/useAllDevices: true` — any empty raw disk attached to any
 node becomes an OSD automatically. **Managed out-of-band** (not in Git) —
 runbook in [`gitops/README.md`](gitops/README.md).
+
+### Misc tech
+
+The tinkering side of the lab — radios, SBCs, and microcontrollers. This is the
+central inventory: exact models live here so I don't have to remember them.
+Nothing here is wired into the cluster (yet); some of it may never be, and
+that's the point. *Details and photos to come.*
+
+#### Meshtastic
+
+Two [Meshtastic](https://meshtastic.org/) LoRa mesh nodes, both picked up around DEF CON 2026 (August):
+
+##### `SenseCAP Card Tracker T1000-E` — Seeed Studio
+<!-- <details><summary>T1000-E Photo</summary>
+<img src="docs/images/t1000-e.jpg" width="400" alt="SenseCAP Card Tracker T1000-E">
+</details> -->
+
+Credit-card-sized tracker node. Bought the week before DEF CON.
+
+- **MCU / Radio:** Nordic nRF52840 (BLE) + Semtech LR1110 (LoRa)
+- **GPS:** onboard GNSS + accelerometer, temp & light sensors
+- **Power:** built-in 700 mAh LiPo, magnetic charging cable
+- **Form factor:** 85 × 55 × 6.5 mm, IP65
+- **Role / config:** TBD
+
+##### `RAK WisBlock 4631` — RAKwireless
+<!-- <details><summary>RAK4631 Photo</summary>
+<img src="docs/images/rak4631.jpg" width="400" alt="RAK WisBlock 4631">
+</details> -->
+
+Modular WisBlock-based node. Picked up at DEF CON itself.
+
+- **MCU / Radio:** RAK4631 core — Nordic nRF52840 (BLE) + Semtech SX1262 (LoRa)
+- **Form factor:** WisBlock base board + snap-on modules (expandable — GPS, sensors, e-ink, solar)
+- **Base / modules / enclosure:** TBD
+- **Role / config:** TBD
+
+#### Ham radio
+
+##### `Baofeng UV-5R`
+<!-- <details><summary>UV-5R Photo</summary>
+<img src="docs/images/baofeng-uv-5r.jpg" width="400" alt="Baofeng UV-5R">
+</details> -->
+
+Dual-band VHF/UHF handheld transceiver.
+
+- **Bands:** 2 m / 70 cm — 136–174 MHz (VHF) + 400–520 MHz (UHF), FM
+- **Power:** ~4–5 W high / 1 W low; BL-5 1800 mAh Li-ion battery
+- **Programming:** Kenwood 2-pin connector, CHIRP-compatible (cable: TBD)
+- **License / callsign / channel plan:** TBD
+
+#### SBCs & microcontrollers
+
+| Device | Notes |
+|---|---|
+| Raspberry Pi 3 | Model/revision, OS, and role TBD |
+| Arduino | Board model TBD |
+| Arduino Mini | Details TBD |
 
 ---
 
