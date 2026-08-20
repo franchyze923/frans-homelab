@@ -1,0 +1,221 @@
+# boinc: donate idle CPU cycles to astronomy BOINC projects (2026-08-20).
+#
+# Projects (all astronomy, per Fran): Einstein@Home (gravitational waves /
+# pulsars), MilkyWay@home (galaxy structure N-body), Asteroids@home (asteroid
+# shape inversion). Universe@Home was considered but the project completed.
+# Account keys come from the out-of-band `boinc-secrets` Secret (template in
+# README); until it exists the pods idle harmlessly with no projects attached.
+#
+# Yield model: this must NEVER cost a real workload anything.
+#   - PriorityClass idle-compute (negative value) -> first to be preempted or
+#     evicted under pressure; preemptionPolicy Never so it can't bump anyone.
+#   - cpu request 100m with no cpu limit -> near-zero CFS weight, so under
+#     contention the kernel throttles BOINC toward nothing, but genuinely idle
+#     cores get used at full speed. BOINC also runs its science apps at nice 19.
+#   - BOINC's own prefs cap it at 50% of each node's cores (thermals/power --
+#     desktop-node lives on the Ryzen Proxmox host that hits 84C under full
+#     encode load). Raise max_ncpus_pct below to donate harder.
+#
+# Node placement mirrors media-reencode's hard-won rules: off the gpu box
+# (Plex/Frigate/ollama), off control-planes (untainted prod master starved
+# etcd under an 8-core encode on 2026-07-15), off the tainted arm64 M1
+# (spotty arm64 work availability; revisit later). That leaves worker-1,
+# worker-2, desktop-node -- one pod each via anti-affinity.
+#
+# StatefulSet (not Deployment): each replica keeps its own 5Gi rook-ceph-block
+# PVC of BOINC state, and stable pod names give the projects stable host
+# identities, so in-progress work units survive restarts and reschedules.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: idle-compute
+value: -100000
+preemptionPolicy: Never
+globalDefault: false
+description: >-
+  Scavenger workloads (BOINC etc.): first to be preempted/evicted, never
+  allowed to preempt anything else.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boinc-config
+  namespace: boinc
+data:
+  # BOINC-level throttles. BOINC sees the HOST's cores/RAM from /proc, not the
+  # container's, so percentages below are of the node, not the pod:
+  #   ncpus 50%  -> 6 of 12 cores on worker-1, 4 of 8 on worker-2/desktop
+  #   ram 20% busy/idle -> ~3.2Gi on the 16Gi workers, ~6.4Gi on desktop
+  #     (keep this under the container memory limit or tasks get OOMKilled)
+  #   disk 4GB   -> fits the 5Gi PVC with headroom
+  # Small work buffer: less wasted work if we scale to 0, faster turnaround.
+  global_prefs_override.xml: |
+    <global_preferences>
+      <run_on_batteries>0</run_on_batteries>
+      <max_ncpus_pct>50</max_ncpus_pct>
+      <cpu_usage_limit>100</cpu_usage_limit>
+      <ram_max_used_busy_pct>20</ram_max_used_busy_pct>
+      <ram_max_used_idle_pct>20</ram_max_used_idle_pct>
+      <disk_max_used_gb>4</disk_max_used_gb>
+      <work_buf_min_days>0.1</work_buf_min_days>
+      <work_buf_additional_days>0.25</work_buf_additional_days>
+    </global_preferences>
+  # Sidecar reconciler: waits for the client RPC, keeps prefs synced from this
+  # ConfigMap, and (re)attaches any project whose account key is configured.
+  # boinccmd run from the data dir picks up gui_rpc_auth.cfg automatically.
+  attach.sh: |
+    #!/bin/sh
+    set -u
+    cd /var/lib/boinc
+    log(){ echo "[attach] $(date '+%F %T') $*"; }
+
+    until boinccmd --get_host_info >/dev/null 2>&1; do
+      log "waiting for boinc client rpc..."
+      sleep 5
+    done
+    log "boinc client is up"
+
+    ensure(){ # $1 master url, $2 account key, $3 display name
+      [ -n "$2" ] || { log "$3: no account key configured, skipping"; return 0; }
+      if boinccmd --get_project_status 2>/dev/null | grep -q "$1"; then
+        return 0
+      fi
+      log "attaching $3"
+      if boinccmd --project_attach "$1" "$2"; then
+        log "$3 attached"
+      else
+        log "$3 attach FAILED (will retry next pass)"
+      fi
+    }
+
+    while true; do
+      want=$(md5sum < /config/global_prefs_override.xml)
+      have=$(md5sum < global_prefs_override.xml 2>/dev/null || echo none)
+      if [ "$want" != "$have" ]; then
+        cp /config/global_prefs_override.xml global_prefs_override.xml
+        boinccmd --read_global_prefs_override && log "applied global prefs override"
+      fi
+      ensure "https://einsteinathome.org/"           "${EINSTEIN_ACCOUNT_KEY:-}"  "Einstein@Home"
+      ensure "https://milkyway.cs.rpi.edu/milkyway/" "${MILKYWAY_ACCOUNT_KEY:-}"  "MilkyWay@home"
+      ensure "https://asteroidsathome.net/boinc/"    "${ASTEROIDS_ACCOUNT_KEY:-}" "Asteroids@home"
+      sleep 600
+    done
+---
+# Headless service only to satisfy the StatefulSet; nothing dials in.
+apiVersion: v1
+kind: Service
+metadata:
+  name: boinc
+  namespace: boinc
+spec:
+  clusterIP: None
+  selector:
+    app: boinc
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: boinc
+  namespace: boinc
+  labels:
+    app: boinc
+spec:
+  serviceName: boinc
+  # One pod per allowed node. Scale down (3 -> 1 -> 0) to cut power draw;
+  # anti-affinity keeps whatever remains spread out.
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: boinc
+  template:
+    metadata:
+      labels:
+        app: boinc
+    spec:
+      priorityClassName: idle-compute
+      terminationGracePeriodSeconds: 120
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: boinc
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k8s-cluster-prod-worker-1
+                      - k8s-cluster-prod-worker-2
+                      - ubuntu-26-desktop-node
+      containers:
+        - name: client
+          image: docker.io/boinc/client:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            # No cpu limit on purpose: idle cores are the whole point, and the
+            # tiny request already makes BOINC lose every contention fight.
+            limits:
+              memory: 8Gi
+          volumeMounts:
+            - name: boinc-data
+              mountPath: /var/lib/boinc
+        - name: attach
+          image: docker.io/boinc/client:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/config/attach.sh"]
+          env:
+            # All optional: pods run (idle) before the Secret exists, and each
+            # missing key just skips that project.
+            - name: EINSTEIN_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: EINSTEIN_ACCOUNT_KEY
+                  optional: true
+            - name: MILKYWAY_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: MILKYWAY_ACCOUNT_KEY
+                  optional: true
+            - name: ASTEROIDS_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: ASTEROIDS_ACCOUNT_KEY
+                  optional: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: boinc-data
+              mountPath: /var/lib/boinc
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: boinc-config
+  volumeClaimTemplates:
+    - metadata:
+        name: boinc-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: rook-ceph-block
+        resources:
+          requests:
+            storage: 5Gi

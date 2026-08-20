@@ -4,6 +4,22 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-08-20
+
+### New app: BOINC idle-compute donation (astronomy projects)
+Deployed `boinc` — one BOINC client per big amd64 node (worker-1, worker-2,
+desktop-node; StatefulSet with per-pod 5Gi rook-ceph-block state) donating
+idle CPU to Einstein@Home, MilkyWay@home, and Asteroids@home. Built to be a
+pure scavenger: new cluster-wide `idle-compute` PriorityClass (negative
+priority, never preempts), 100m CPU request with no limit so contention
+throttles it toward zero, plus BOINC-level caps (50% of cores, 20% RAM) for
+thermals — desktop-node's Ryzen Proxmox host hits 84°C under sustained load.
+An attach sidecar reconciles project attachments from the out-of-band
+`boinc-secrets` Secret every 10 min, so pods idle harmlessly until account
+keys are provided (see `gitops/workloads/boinc/README.md`). Kept off the GPU
+box, control-planes, and the M1 on purpose; GPU crunching and arm64 noted as
+possible follow-ups.
+
 ## 2026-07-27
 
 ### Plex CrashLoopBackOff on `ubuntu24-gpu-box`: NVIDIA driver/library version mismatch
