@@ -6,7 +6,16 @@ forward, every change gets an entry here.
 
 ## 2026-08-20
 
-### BOINC: Einstein@Home live on all 3 nodes; two rollout bugs fixed
+### Keycloak: 5-minute ArgoCD logouts — realm access-token lifespan 5 min → 12 h
+ArgoCD kicked Fran out after ~5 min away despite the 2026-07-16 session
+raise (idle 14 d / max 30 d). Those settings govern the Keycloak *session*;
+the *access/ID token* still had the 5-min realm default, and ArgoCD's UI —
+unlike Grafana/Gitea/Immich — never uses refresh tokens, so its login dies
+with the token. Fixed realm-wide per Fran's ask (all homelab-realm apps, not
+just argocd): `accessTokenLifespan: 43200` via the admin REST API — command
+recorded in `gitops/workloads/keycloak/README.md`, which also now documents
+the ArgoCD-never-refreshes gotcha. Like all realm settings this lives only
+in the Keycloak DB: re-apply after any realm rebuild.
 Fran created the Einstein@Home account (user `francis`) and applied
 `boinc-secrets` with just `EINSTEIN_ACCOUNT_KEY` — starting Einstein-only;
 MilkyWay/Asteroids are add-a-key-away. All 3 pods attached and crunching

@@ -43,12 +43,13 @@ client — no client secret required, so the mobile app can log in), then
 refresh each consumer's secret. Or restore the nightly backup, which includes
 the Keycloak DB.
 
-## Realm session settings (changed 2026-07-16)
+## Realm session settings (changed 2026-07-16, token lifespan 2026-08-20)
 
 Defaults (30 min idle / 10 h max) forced a re-login on every app after half
-an hour away. Now: **SSO Session Idle 14 d, Max 30 d, Remember Me on** —
-set via the admin REST API (admin password: `cluster/keycloak-credentials.txt`;
-Keycloak has no realm-settings CLI in-container, the API is the scriptable path):
+an hour away. Now: **SSO Session Idle 14 d, Max 30 d, Remember Me on,
+Access Token Lifespan 12 h** — set via the admin REST API (admin password:
+`cluster/keycloak-credentials.txt`; Keycloak has no realm-settings CLI
+in-container, the API is the scriptable path):
 
 ```sh
 TOKEN=$(curl -fsS "https://keycloak.franpolignano.com/realms/master/protocol/openid-connect/token" \
@@ -56,12 +57,16 @@ TOKEN=$(curl -fsS "https://keycloak.franpolignano.com/realms/master/protocol/ope
   -d grant_type=password | jq -r .access_token)
 curl -fsS -X PUT "https://keycloak.franpolignano.com/admin/realms/homelab" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"ssoSessionIdleTimeout": 1209600, "ssoSessionMaxLifespan": 2592000, "rememberMe": true}'
+  -d '{"ssoSessionIdleTimeout": 1209600, "ssoSessionMaxLifespan": 2592000, "rememberMe": true, "accessTokenLifespan": 43200}'
 ```
 
-Access-token lifespan stays at the 5-min default (renews silently while the
-SSO session is alive). Re-apply after any realm rebuild — this is not in the
-realm defaults.
+Access-token lifespan was left at the 5-min default until 2026-08-20 on the
+theory that tokens renew silently while the SSO session is alive — true for
+apps that use refresh tokens (Grafana/Gitea/Immich), but **ArgoCD's UI never
+refreshes**: its session dies with the token, which logged Fran out every
+5 minutes. 12 h realm-wide fixes it everywhere (tradeoff: a stolen bearer
+token stays valid up to 12 h — fine on the LAN). Re-apply after any realm
+rebuild — this is not in the realm defaults.
 
 No SSO (no native OIDC): plex, jellyfin*, radarr/sonarr/sabnzbd, tautulli,
 metube, heimdall, prometheus, frigate, ELK (paid feature), ceph dashboard
