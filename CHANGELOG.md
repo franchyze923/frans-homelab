@@ -6,6 +6,20 @@ forward, every change gets an entry here.
 
 ## 2026-08-20
 
+### BOINC: Einstein@Home live on all 3 nodes; two rollout bugs fixed
+Fran created the Einstein@Home account (user `francis`) and applied
+`boinc-secrets` with just `EINSTEIN_ACCOUNT_KEY` — starting Einstein-only;
+MilkyWay/Asteroids are add-a-key-away. All 3 pods attached and crunching
+gravitational-wave work units at the intended ~50% core cap (4-5 tasks/pod;
+verified ~3.9 cores on 8-core worker-2, ~4.9 on 12-core worker-1). Two bugs
+surfaced on the first real rollout (fixed in 44b46af): the attach sidecar's
+shell ran as container PID 1 and ignored SIGTERM, so every pod delete ate
+the full 120 s grace period ("stuck Terminating") — now traps TERM with
+backgrounded sleeps; and Einstein stores its master URL as
+`einstein.phys.uwm.edu` (redirect from `einsteinathome.org`), so the
+already-attached check never matched and would have retried the attach
+every 10 min forever — now matches stored URLs on stable hostname fragments.
+
 ### New app: BOINC idle-compute donation (astronomy projects)
 Deployed `boinc` — one BOINC client per big amd64 node (worker-1, worker-2,
 desktop-node; StatefulSet with per-pod 5Gi rook-ceph-block state) donating
