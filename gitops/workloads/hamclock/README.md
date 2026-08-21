@@ -26,5 +26,5 @@ Everything persists on the `hamclock-config` PVC.
 - The web UI is a live view of a single shared canvas: every browser tab
   sees (and controls) the same clock. That's by design — it's a wall
   dashboard, not a multi-user app.
-- REST API for scripting lives on the same port, e.g.
-  `curl https://hamclock.franpolignano.com/get_sys.txt`.
+- The real UI path is `/live.html`; the HTTPRoute redirects bare `/`
+  there (HamClock's web server 400s on `/`).
