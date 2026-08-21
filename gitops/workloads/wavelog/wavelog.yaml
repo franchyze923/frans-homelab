@@ -142,6 +142,11 @@ spec:
       labels:
         app: wavelog
     spec:
+      # subPath dirs are created root:root on the PVC, but Apache runs as
+      # www-data (33); fsGroup makes kubelet chgrp the volume group-writable
+      # at mount (compose gets this for free via named-volume ownership copy)
+      securityContext:
+        fsGroup: 33
       containers:
         - name: wavelog
           image: ghcr.io/wavelog/wavelog:latest
