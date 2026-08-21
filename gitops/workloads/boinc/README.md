@@ -1,7 +1,8 @@
 # boinc — idle-compute donation to astronomy projects
 
-BOINC clients that soak up idle CPU on `worker-1`, `worker-2`, and
-`ubuntu-26-desktop-node` for astronomy volunteer-computing projects:
+BOINC clients that soak up idle CPU on `worker-1`, `worker-2`,
+`ubuntu-26-desktop-node`, and `mac-m1-worker` (arm64, separate `boinc-arm`
+StatefulSet) for astronomy volunteer-computing projects:
 
 | Project | Science | Sign up |
 |---|---|---|
@@ -54,7 +55,10 @@ kubectl -n boinc exec boinc-0 -c client -- sh -c 'cd /var/lib/boinc && boinccmd 
   the small work buffer keeps that loss minor. Prefer `--set_run_mode never`
   for short pauses.
 - Stats/credit: <https://www.boincstats.com/> aggregates across projects
-  (hosts show up as `boinc-0/1/2`).
+  (hosts show up as `boinc-0/1/2` and `boinc-arm-0`).
+- The M1 pod is `boinc-arm-0` — same commands as above, just swap the pod
+  name. Only Einstein@Home publishes aarch64 apps (BRP4 pulsar search), so
+  MilkyWay/Asteroids keys are ignored there even once configured.
 
 ## Later / not done
 
@@ -62,5 +66,3 @@ kubectl -n boinc exec boinc-0 -c client -- sh -c 'cd /var/lib/boinc && boinccmd 
   `boinc/client:nvidia` image variant + an `nvidia.com/gpu` resource claim,
   which would monopolize the GPU that Plex/Frigate/ollama share — skipped
   until GPU time-slicing is worth setting up.
-- **arm64 M1 node**: Einstein@Home has aarch64 apps; would need the `arch`
-  taint toleration + a small-memory variant like media-reencode-arm.

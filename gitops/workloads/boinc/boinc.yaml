@@ -18,9 +18,10 @@
 #
 # Node placement mirrors media-reencode's hard-won rules: off the gpu box
 # (Plex/Frigate/ollama), off control-planes (untainted prod master starved
-# etcd under an 8-core encode on 2026-07-15), off the tainted arm64 M1
-# (spotty arm64 work availability; revisit later). That leaves worker-1,
-# worker-2, desktop-node -- one pod each via anti-affinity.
+# etcd under an 8-core encode on 2026-07-15). amd64 fleet = worker-1,
+# worker-2, desktop-node, one pod each via anti-affinity. The tainted arm64
+# M1 gets its own single-replica StatefulSet at the bottom (boinc/client has
+# no multi-arch manifest, so the arm64v8 tag needs a separate template).
 #
 # StatefulSet (not Deployment): each replica keeps its own 5Gi rook-ceph-block
 # PVC of BOINC state, and stable pod names give the projects stable host
@@ -183,6 +184,115 @@ spec:
           env:
             # All optional: pods run (idle) before the Secret exists, and each
             # missing key just skips that project.
+            - name: EINSTEIN_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: EINSTEIN_ACCOUNT_KEY
+                  optional: true
+            - name: MILKYWAY_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: MILKYWAY_ACCOUNT_KEY
+                  optional: true
+            - name: ASTEROIDS_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boinc-secrets
+                  key: ASTEROIDS_ACCOUNT_KEY
+                  optional: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: boinc-data
+              mountPath: /var/lib/boinc
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: boinc-config
+  volumeClaimTemplates:
+    - metadata:
+        name: boinc-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: rook-ceph-block
+        resources:
+          requests:
+            storage: 5Gi
+---
+# Headless service only to satisfy the arm StatefulSet; nothing dials in.
+apiVersion: v1
+kind: Service
+metadata:
+  name: boinc-arm
+  namespace: boinc
+spec:
+  clusterIP: None
+  selector:
+    app: boinc-arm
+---
+# Separate StatefulSet for the tainted arm64 Mac M1 node, following the
+# media-reencode-arm pattern: boinc/client publishes no multi-arch manifest
+# (latest is amd64-only; arm64 lives under the arm64v8 tag), and the M1 only
+# has ~5.3Gi allocatable so it gets a smaller memory envelope. Same ConfigMap,
+# Secret, and yield model as the amd64 fleet; the 50%-cores pref gives it
+# 3 of 6 cores, and 20% host RAM ~= 1.1Gi keeps it well under the 3Gi limit.
+# Einstein@Home serves aarch64 work (BRP4 pulsar search); MilkyWay/Asteroids
+# have no arm64 apps, so their ensure-attach just idles here.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: boinc-arm
+  namespace: boinc
+  labels:
+    app: boinc-arm
+spec:
+  serviceName: boinc-arm
+  replicas: 1
+  selector:
+    matchLabels:
+      app: boinc-arm
+  template:
+    metadata:
+      labels:
+        app: boinc-arm
+    spec:
+      priorityClassName: idle-compute
+      terminationGracePeriodSeconds: 120
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      tolerations:
+        - key: arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
+      containers:
+        - name: client
+          image: docker.io/boinc/client:arm64v8
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 3Gi
+          volumeMounts:
+            - name: boinc-data
+              mountPath: /var/lib/boinc
+        - name: attach
+          image: docker.io/boinc/client:arm64v8
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/config/attach.sh"]
+          env:
             - name: EINSTEIN_ACCOUNT_KEY
               valueFrom:
                 secretKeyRef:
