@@ -120,6 +120,8 @@ backups (anything too big or recreatable to keep on Ceph).
 | `steps-dashboard` | Garmin daily-steps dashboard (hourly Garmin Connect sync) |
 | `heimdall` | Homelab landing page |
 | `vaultwarden` | Self-hosted password manager (Bitwarden-compatible), internal-only |
+| `hamclock` | Ham radio wall dashboard (space weather, propagation, DX spots) |
+| `wavelog` | Amateur radio logbook (QSO logging, LoTW/QRZ sync) + MariaDB |
 | `demo`, `demo2`, `python-demo`, `keycloak-demo-app` | Demos / examples |
 
 ## Access patterns

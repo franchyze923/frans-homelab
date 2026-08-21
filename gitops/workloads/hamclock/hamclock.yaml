@@ -1,0 +1,119 @@
+# hamclock: ham-shack wall dashboard (2026-08-21) — solar/space weather, band
+# conditions, VOACAP propagation, DX cluster spots, satellite passes.
+# Upstream HamClock is by Elwood Downey WB0OEW (SK); the container is
+# ggilman/hamclock (multi-arch, alpine, non-root). It defaults to the
+# hamclock.com community backend because the original clearskyinstitute.com
+# backend shut down June 2026 — do NOT switch BACKEND_PRESET to "original".
+#
+# No radio hardware involved: pure internet-fed dashboard. Callsign/DE
+# location/panes are configured once in the web UI and persist on the PVC.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hamclock
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hamclock-config
+  namespace: hamclock
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hamclock
+  namespace: hamclock
+  labels:
+    app: hamclock
+spec:
+  replicas: 1
+  # Recreate: RWO PVC, avoid Multi-Attach on reschedule
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hamclock
+  template:
+    metadata:
+      labels:
+        app: hamclock
+    spec:
+      containers:
+        - name: hamclock
+          image: docker.io/ggilman/hamclock:latest
+          # Resolution is the command arg, not an env var. Bigger canvases
+          # (2400x1440, 3200x1920) cost more CPU/RAM for the render loop.
+          args: ["hamclock-1600x960"]
+          env:
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 8081
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: hamclock-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hamclock
+  namespace: hamclock
+  labels:
+    app: hamclock
+spec:
+  type: ClusterIP
+  selector:
+    app: hamclock
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hamclock
+  namespace: hamclock
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - hamclock.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: hamclock
+          port: 8081

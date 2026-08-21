@@ -31,6 +31,7 @@ geoserver-credentials.txt
 postgis-credentials.txt
 strava-credentials.txt
 cesium-ion-token.txt
+wavelog-credentials.txt
 
 # Deployment artifact backups
 deployments/

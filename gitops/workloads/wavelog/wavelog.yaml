@@ -1,0 +1,220 @@
+# wavelog: self-hosted amateur-radio logbook (2026-08-21) — QSO logging,
+# LoTW/QRZ/Clublog sync, award tracking, station map. Actively maintained
+# fork of Cloudlog; official image lives on GHCR (no Docker Hub build).
+#
+# Two deployments: MariaDB + the PHP app, both on rook-ceph-block PVCs.
+# DB password comes from the out-of-band `wavelog-secrets` Secret (template
+# in README; also mirrored to cluster/wavelog-credentials.txt, gitignored).
+#
+# First run is a manual step: https://wavelog.franpolignano.com/install
+# (DB host `wavelog-db`, db/user `wavelog`). The installer writes config.php
+# into the config volume and refuses to run again once it exists.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wavelog
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wavelog-db-data
+  namespace: wavelog
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wavelog-data
+  namespace: wavelog
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wavelog-db
+  namespace: wavelog
+  labels:
+    app: wavelog-db
+spec:
+  replicas: 1
+  # Recreate: RWO PVC, avoid Multi-Attach on reschedule
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: wavelog-db
+  template:
+    metadata:
+      labels:
+        app: wavelog-db
+    spec:
+      containers:
+        - name: mariadb
+          # Pinned to the major.minor the Wavelog docs test against
+          image: docker.io/library/mariadb:11.8
+          env:
+            - name: MARIADB_RANDOM_ROOT_PASSWORD
+              value: "yes"
+            - name: MARIADB_DATABASE
+              value: wavelog
+            - name: MARIADB_USER
+              value: wavelog
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wavelog-secrets
+                  key: MARIADB_PASSWORD
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 3306
+              name: mysql
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: wavelog-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wavelog-db
+  namespace: wavelog
+  labels:
+    app: wavelog-db
+spec:
+  type: ClusterIP
+  selector:
+    app: wavelog-db
+  ports:
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP
+      name: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wavelog
+  namespace: wavelog
+  labels:
+    app: wavelog
+spec:
+  replicas: 1
+  # Recreate: RWO PVC, avoid Multi-Attach on reschedule
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: wavelog
+  template:
+    metadata:
+      labels:
+        app: wavelog
+    spec:
+      containers:
+        - name: wavelog
+          image: ghcr.io/wavelog/wavelog:latest
+          env:
+            - name: TZ
+              value: "America/New_York"
+          ports:
+            - containerPort: 80
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+          # One PVC, three subPaths — mirrors the upstream compose volumes
+          volumeMounts:
+            - name: data
+              subPath: config
+              mountPath: /var/www/html/application/config/docker
+            - name: data
+              subPath: uploads
+              mountPath: /var/www/html/uploads
+            - name: data
+              subPath: userdata
+              mountPath: /var/www/html/userdata
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wavelog-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wavelog
+  namespace: wavelog
+  labels:
+    app: wavelog
+spec:
+  type: ClusterIP
+  selector:
+    app: wavelog
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: wavelog
+  namespace: wavelog
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - wavelog.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: wavelog
+          port: 80
