@@ -279,13 +279,15 @@ spec:
         - name: config-backup
           persistentVolumeClaim:
             claimName: plex-config-backup
-        # TEMPORARY (2026-07-17): plain emptyDir on node-local disk while the
-        # Wedding library "Optimize" run writes whole files through /transcode.
-        # Revert to `medium: Memory` + `sizeLimit: 8Gi` when the run completes
-        # (see README warning: Optimize must not run against the RAM disk).
+        # RAM-backed transcode scratch (see README). Counts against the 16Gi
+        # memory limit; exceeding sizeLimit evicts the pod. If DVR or library
+        # "Optimize" is ever used again, temporarily drop `medium: Memory` and
+        # raise sizeLimit (whole files are written through here) -- as done
+        # 2026-07-17..2026-08-22 for the Wedding library.
         - name: transcode
           emptyDir:
-            sizeLimit: 40Gi
+            medium: Memory
+            sizeLimit: 8Gi
 ---
 # CronJob: backup Plex config from Ceph to NFS every 6 hours
 apiVersion: batch/v1
