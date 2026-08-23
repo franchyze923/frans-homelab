@@ -243,6 +243,19 @@ station build — resonant, so no tuner needed.
 - **Radio to drive it:** none yet — HF rig planned, likely Icom IC-7300
 - **Deployment spot:** TBD
 
+##### `ECO-WORTHY 12V 30Ah LiFePO4` — portable power
+<!-- <details><summary>LiFePO4 Photo</summary>
+<img src="docs/images/eco-worthy-lifepo4-30ah.jpg" width="400" alt="ECO-WORTHY 12V 30Ah LiFePO4 battery">
+</details> -->
+
+Battery for the HF station build — will run the rig off-grid / portable
+(POTA-style) and double as backup power.
+
+- **Chemistry / capacity:** LiFePO4, 12 V 30 Ah (~384 Wh)
+- **BMS:** built-in; 4000+ deep-cycle rated
+- **Form factor:** drop-in replacement for a 12 V 35 Ah SLA
+- **Charger / powerpole wiring:** TBD
+
 #### SBCs & microcontrollers
 
 | Device | Notes |
