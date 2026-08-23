@@ -229,6 +229,20 @@ Dual-band VHF/UHF handheld transceiver.
 - **Programming:** Kenwood 2-pin connector, CHIRP-compatible (cable: TBD)
 - **License / callsign / channel plan:** TBD
 
+##### `N9SAB 100W No-Tune EFHW` — end-fed half-wave HF antenna
+<!-- <details><summary>EFHW Photo</summary>
+<img src="docs/images/n9sab-efhw.jpg" width="400" alt="N9SAB 100W No-Tune EFHW antenna">
+</details> -->
+
+Portable multi-band HF wire antenna (eBay, 2026-08). First piece of the HF
+station build — resonant, so no tuner needed.
+
+- **Bands:** 40 / 20 / 15 / 10 m, no tuner
+- **Power:** 100 W
+- **Type:** end-fed half-wave wire + matching transformer
+- **Radio to drive it:** none yet — HF rig planned, likely Icom IC-7300
+- **Deployment spot:** TBD
+
 #### SBCs & microcontrollers
 
 | Device | Notes |
