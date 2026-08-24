@@ -12,9 +12,11 @@
 #   - cpu request 100m with no cpu limit -> near-zero CFS weight, so under
 #     contention the kernel throttles BOINC toward nothing, but genuinely idle
 #     cores get used at full speed. BOINC also runs its science apps at nice 19.
-#   - BOINC's own prefs cap it at 50% of each node's cores (thermals/power --
-#     desktop-node lives on the Ryzen Proxmox host that hits 84C under full
-#     encode load). Raise max_ncpus_pct below to donate harder.
+#   - BOINC's own prefs cap cores per node (thermals/power -- desktop-node
+#     lives on the Ryzen Proxmox host that hits 84C under full encode load).
+#     Defaults to 50%; worker-1/2 have per-node overrides tuned to 7 cores
+#     each so both workers match and each roughly keeps up with the Ryzen
+#     node's output (4 faster cores). Adjust max_ncpus_pct below to change.
 #
 # Node placement mirrors media-reencode's hard-won rules: off the gpu box
 # (Plex/Frigate/ollama), off control-planes (untainted prod master starved
@@ -45,9 +47,18 @@ metadata:
   namespace: boinc
 data:
   # BOINC-level throttles. BOINC sees the HOST's cores/RAM from /proc, not the
-  # container's, so percentages below are of the node, not the pod:
-  #   ncpus 50%  -> 6 of 12 cores on worker-1, 4 of 8 on worker-2/desktop
-  #   ram 20% busy/idle -> ~3.2Gi on the 16Gi workers, ~6.4Gi on desktop
+  # container's, so percentages below are of the node, not the pod.
+  #
+  # The attach sidecar prefers a per-node file
+  # (global_prefs_override.<nodeName>.xml) and falls back to this default —
+  # a single shared percentage can never give equal core counts on nodes with
+  # different core totals, and the workers should match each other and come
+  # close to the Ryzen desktop-node's per-core-faster output (Ryzen 3600 core
+  # ~1.8x an E5-2660 v2 core, so its 4 cores ~ 7 Xeon cores).
+  #
+  # Default file (desktop-node, M1):
+  #   ncpus 50%  -> 4 of 8 cores on desktop, 3 of 6 on the M1
+  #   ram 20% busy/idle -> ~6.4Gi on the 32Gi desktop, ~1.1Gi on the M1
   #     (keep this under the container memory limit or tasks get OOMKilled)
   #   disk 4GB   -> fits the 5Gi PVC with headroom
   # Small work buffer: less wasted work if we scale to 0, faster turnaround.
@@ -58,6 +69,34 @@ data:
       <cpu_usage_limit>100</cpu_usage_limit>
       <ram_max_used_busy_pct>20</ram_max_used_busy_pct>
       <ram_max_used_idle_pct>20</ram_max_used_idle_pct>
+      <disk_max_used_gb>4</disk_max_used_gb>
+      <work_buf_min_days>0.1</work_buf_min_days>
+      <work_buf_additional_days>0.25</work_buf_additional_days>
+    </global_preferences>
+  # worker-1 (12 vCPU): BOINC truncates ncpus*pct/100, so 59% -> 7 of 12.
+  # RAM raised to 30% (~4.8Gi of 16Gi, under the 8Gi container limit) so 7
+  # concurrent tasks don't starve on the old 20% (~3.2Gi) cap.
+  global_prefs_override.k8s-cluster-prod-worker-1.xml: |
+    <global_preferences>
+      <run_on_batteries>0</run_on_batteries>
+      <max_ncpus_pct>59</max_ncpus_pct>
+      <cpu_usage_limit>100</cpu_usage_limit>
+      <ram_max_used_busy_pct>30</ram_max_used_busy_pct>
+      <ram_max_used_idle_pct>30</ram_max_used_idle_pct>
+      <disk_max_used_gb>4</disk_max_used_gb>
+      <work_buf_min_days>0.1</work_buf_min_days>
+      <work_buf_additional_days>0.25</work_buf_additional_days>
+    </global_preferences>
+  # worker-2 (8 vCPU): 88% -> 7 of 8, matching worker-1. Safe because BOINC
+  # runs nice-19 with a 100m request (loses every contention fight) and the
+  # idle-compute PriorityClass evicts it first under memory pressure.
+  global_prefs_override.k8s-cluster-prod-worker-2.xml: |
+    <global_preferences>
+      <run_on_batteries>0</run_on_batteries>
+      <max_ncpus_pct>88</max_ncpus_pct>
+      <cpu_usage_limit>100</cpu_usage_limit>
+      <ram_max_used_busy_pct>30</ram_max_used_busy_pct>
+      <ram_max_used_idle_pct>30</ram_max_used_idle_pct>
       <disk_max_used_gb>4</disk_max_used_gb>
       <work_buf_min_days>0.1</work_buf_min_days>
       <work_buf_additional_days>0.25</work_buf_additional_days>
@@ -97,12 +136,18 @@ data:
       fi
     }
 
+    # Per-node prefs beat the shared default (NODE_NAME from the downward
+    # API) — this is how worker-1/2 get different percentages but equal cores.
+    prefs=/config/global_prefs_override.${NODE_NAME:-unknown}.xml
+    [ -f "$prefs" ] || prefs=/config/global_prefs_override.xml
+    log "using prefs $prefs"
+
     while true; do
-      want=$(md5sum < /config/global_prefs_override.xml)
+      want=$(md5sum < "$prefs")
       have=none
       [ -f global_prefs_override.xml ] && have=$(md5sum < global_prefs_override.xml)
       if [ "$want" != "$have" ]; then
-        cp /config/global_prefs_override.xml global_prefs_override.xml
+        cp "$prefs" global_prefs_override.xml
         boinccmd --read_global_prefs_override && log "applied global prefs override"
       fi
       ensure "https://einsteinathome.org/"           "einstein"        "${EINSTEIN_ACCOUNT_KEY:-}"  "Einstein@Home"
@@ -182,6 +227,11 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "/config/attach.sh"]
           env:
+            # Lets attach.sh pick the per-node prefs override for this node.
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             # All optional: pods run (idle) before the Secret exists, and each
             # missing key just skips that project.
             - name: EINSTEIN_ACCOUNT_KEY
@@ -293,6 +343,10 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "/config/attach.sh"]
           env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: EINSTEIN_ACCOUNT_KEY
               valueFrom:
                 secretKeyRef:

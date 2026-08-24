@@ -51,6 +51,12 @@ kubectl -n boinc exec boinc-0 -c client -- sh -c 'cd /var/lib/boinc && boinccmd 
   lower `max_ncpus_pct` in the ConfigMap (applies within ~10 min, no restart).
 - **More donation**: raise `max_ncpus_pct` (watch temps on the Ryzen Proxmox
   host — desktop-node lives there).
+- **Per-node tuning**: the sidecar prefers
+  `global_prefs_override.<nodeName>.xml` from the ConfigMap over the shared
+  default. worker-1 (59% of 12) and worker-2 (88% of 8) both land on 7 cores,
+  so the two workers match and each roughly keeps pace with the Ryzen
+  desktop-node (4 cores, ~1.8× faster per core). Desktop and the M1 use the
+  50% default.
 - Scaling to 0 abandons in-flight work units after their deadline passes;
   the small work buffer keeps that loss minor. Prefer `--set_run_mode never`
   for short pauses.
