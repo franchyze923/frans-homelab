@@ -14,9 +14,10 @@
 #     cores get used at full speed. BOINC also runs its science apps at nice 19.
 #   - BOINC's own prefs cap cores per node (thermals/power -- desktop-node
 #     lives on the Ryzen Proxmox host that hits 84C under full encode load).
-#     Defaults to 50%; worker-1/2 have per-node overrides tuned to 7 cores
+#     Defaults to 25%; worker-1/2 have per-node overrides tuned to 3 cores
 #     each so both workers match and each roughly keeps up with the Ryzen
-#     node's output (4 faster cores). Adjust max_ncpus_pct below to change.
+#     node's output (2 faster cores). Halved across the board on 2026-08-26
+#     to cut power draw. Adjust max_ncpus_pct below to change.
 #
 # Node placement mirrors media-reencode's hard-won rules: off the gpu box
 # (Plex/Frigate/ollama), off control-planes (untainted prod master starved
@@ -57,7 +58,7 @@ data:
   # ~1.8x an E5-2660 v2 core, so its 4 cores ~ 7 Xeon cores).
   #
   # Default file (desktop-node, M1):
-  #   ncpus 50%  -> 4 of 8 cores on desktop, 3 of 6 on the M1
+  #   ncpus 25%  -> 2 of 8 cores on desktop, 1 of 6 on the M1 (1.5 truncated)
   #   ram 20% busy/idle -> ~6.4Gi on the 32Gi desktop, ~1.1Gi on the M1
   #     (keep this under the container memory limit or tasks get OOMKilled)
   #   disk 4GB   -> fits the 5Gi PVC with headroom
@@ -65,7 +66,7 @@ data:
   global_prefs_override.xml: |
     <global_preferences>
       <run_on_batteries>0</run_on_batteries>
-      <max_ncpus_pct>50</max_ncpus_pct>
+      <max_ncpus_pct>25</max_ncpus_pct>
       <cpu_usage_limit>100</cpu_usage_limit>
       <ram_max_used_busy_pct>20</ram_max_used_busy_pct>
       <ram_max_used_idle_pct>20</ram_max_used_idle_pct>
@@ -73,13 +74,13 @@ data:
       <work_buf_min_days>0.1</work_buf_min_days>
       <work_buf_additional_days>0.25</work_buf_additional_days>
     </global_preferences>
-  # worker-1 (12 vCPU): BOINC truncates ncpus*pct/100, so 59% -> 7 of 12.
-  # RAM raised to 30% (~4.8Gi of 16Gi, under the 8Gi container limit) so 7
-  # concurrent tasks don't starve on the old 20% (~3.2Gi) cap.
+  # worker-1 (12 vCPU): BOINC truncates ncpus*pct/100, so 25% -> 3 of 12
+  # (was 59% -> 7 until 2026-08-26). RAM stays at 30% (~4.8Gi of 16Gi, under
+  # the 8Gi container limit); plenty for 3 tasks.
   global_prefs_override.k8s-cluster-prod-worker-1.xml: |
     <global_preferences>
       <run_on_batteries>0</run_on_batteries>
-      <max_ncpus_pct>59</max_ncpus_pct>
+      <max_ncpus_pct>25</max_ncpus_pct>
       <cpu_usage_limit>100</cpu_usage_limit>
       <ram_max_used_busy_pct>30</ram_max_used_busy_pct>
       <ram_max_used_idle_pct>30</ram_max_used_idle_pct>
@@ -87,13 +88,14 @@ data:
       <work_buf_min_days>0.1</work_buf_min_days>
       <work_buf_additional_days>0.25</work_buf_additional_days>
     </global_preferences>
-  # worker-2 (8 vCPU): 88% -> 7 of 8, matching worker-1. Safe because BOINC
+  # worker-2 (8 vCPU): 38% -> 3 of 8, matching worker-1 (was 88% -> 7 until
+  # 2026-08-26). Safe because BOINC
   # runs nice-19 with a 100m request (loses every contention fight) and the
   # idle-compute PriorityClass evicts it first under memory pressure.
   global_prefs_override.k8s-cluster-prod-worker-2.xml: |
     <global_preferences>
       <run_on_batteries>0</run_on_batteries>
-      <max_ncpus_pct>88</max_ncpus_pct>
+      <max_ncpus_pct>38</max_ncpus_pct>
       <cpu_usage_limit>100</cpu_usage_limit>
       <ram_max_used_busy_pct>30</ram_max_used_busy_pct>
       <ram_max_used_idle_pct>30</ram_max_used_idle_pct>

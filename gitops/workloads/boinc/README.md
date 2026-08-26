@@ -53,10 +53,11 @@ kubectl -n boinc exec boinc-0 -c client -- sh -c 'cd /var/lib/boinc && boinccmd 
   host — desktop-node lives there).
 - **Per-node tuning**: the sidecar prefers
   `global_prefs_override.<nodeName>.xml` from the ConfigMap over the shared
-  default. worker-1 (59% of 12) and worker-2 (88% of 8) both land on 7 cores,
+  default. worker-1 (25% of 12) and worker-2 (38% of 8) both land on 3 cores,
   so the two workers match and each roughly keeps pace with the Ryzen
-  desktop-node (4 cores, ~1.8× faster per core). Desktop and the M1 use the
-  50% default.
+  desktop-node (2 cores, ~1.8× faster per core). Desktop and the M1 use the
+  25% default (2 and 1 cores). Everything was halved on 2026-08-26 to cut
+  power draw; the previous tuning was 7/7/4/3 cores (59%/88%/50%/50%).
 - Scaling to 0 abandons in-flight work units after their deadline passes;
   the small work buffer keeps that loss minor. Prefer `--set_run_mode never`
   for short pauses.
