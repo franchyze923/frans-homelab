@@ -157,17 +157,17 @@ data:
 
     # Per-node prefs beat the shared default (NODE_NAME from the downward
     # API) — this is how worker-1/2 get different percentages but equal cores.
-    prefs=/config/global_prefs_override.${NODE_NAME:-unknown}.xml
-    [ -f "$prefs" ] || prefs=/config/global_prefs_override.xml
-    log "using prefs $prefs"
-
+    # Resolved every pass, not once at startup: a per-node file added later
+    # (M1, 2026-08-28) was otherwise ignored until the pod restarted.
     while true; do
+      prefs=/config/global_prefs_override.${NODE_NAME:-unknown}.xml
+      [ -f "$prefs" ] || prefs=/config/global_prefs_override.xml
       want=$(md5sum < "$prefs")
       have=none
       [ -f global_prefs_override.xml ] && have=$(md5sum < global_prefs_override.xml)
       if [ "$want" != "$have" ]; then
         cp "$prefs" global_prefs_override.xml
-        boinccmd --read_global_prefs_override && log "applied global prefs override"
+        boinccmd --read_global_prefs_override && log "applied global prefs override from $prefs"
       fi
       ensure "https://einsteinathome.org/"           "einstein"        "${EINSTEIN_ACCOUNT_KEY:-}"  "Einstein@Home"
       ensure "https://milkyway.cs.rpi.edu/milkyway/" "milkyway"        "${MILKYWAY_ACCOUNT_KEY:-}"  "MilkyWay@home"
