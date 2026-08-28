@@ -17,7 +17,8 @@
 #     Defaults to 25%; worker-1/2 have per-node overrides tuned to 3 cores
 #     each so both workers match and each roughly keeps up with the Ryzen
 #     node's output (2 faster cores). Halved across the board on 2026-08-26
-#     to cut power draw. Adjust max_ncpus_pct below to change.
+#     to cut power draw; the M1 additionally throttled to ~half a core via
+#     cpu_usage_limit on 2026-08-28. Adjust max_ncpus_pct below to change.
 #
 # Node placement mirrors media-reencode's hard-won rules: off the gpu box
 # (Plex/Frigate/ollama), off control-planes (untainted prod master starved
@@ -57,8 +58,8 @@ data:
   # close to the Ryzen desktop-node's per-core-faster output (Ryzen 3600 core
   # ~1.8x an E5-2660 v2 core, so its 4 cores ~ 7 Xeon cores).
   #
-  # Default file (desktop-node, M1):
-  #   ncpus 25%  -> 2 of 8 cores on desktop, 1 of 6 on the M1 (1.5 truncated)
+  # Default file (desktop-node; the M1 has its own override below):
+  #   ncpus 25%  -> 2 of 8 cores on desktop
   #   ram 20% busy/idle -> ~6.4Gi on the 32Gi desktop, ~1.1Gi on the M1
   #     (keep this under the container memory limit or tasks get OOMKilled)
   #   disk 4GB   -> fits the 5Gi PVC with headroom
@@ -99,6 +100,22 @@ data:
       <cpu_usage_limit>100</cpu_usage_limit>
       <ram_max_used_busy_pct>30</ram_max_used_busy_pct>
       <ram_max_used_idle_pct>30</ram_max_used_idle_pct>
+      <disk_max_used_gb>4</disk_max_used_gb>
+      <work_buf_min_days>0.1</work_buf_min_days>
+      <work_buf_additional_days>0.25</work_buf_additional_days>
+    </global_preferences>
+  # mac-m1-worker (6 cores, arm64): 25% already truncates to BOINC's 1-core
+  # floor, so max_ncpus_pct can't go lower. cpu_usage_limit 50 instead
+  # time-slices that single task (BOINC suspends/resumes it in ~1s cycles) to
+  # average ~half a core — added 2026-08-28 to cut the M1's draw further.
+  # Raise back to 100 for a full core.
+  global_prefs_override.mac-m1-worker.xml: |
+    <global_preferences>
+      <run_on_batteries>0</run_on_batteries>
+      <max_ncpus_pct>25</max_ncpus_pct>
+      <cpu_usage_limit>50</cpu_usage_limit>
+      <ram_max_used_busy_pct>20</ram_max_used_busy_pct>
+      <ram_max_used_idle_pct>20</ram_max_used_idle_pct>
       <disk_max_used_gb>4</disk_max_used_gb>
       <work_buf_min_days>0.1</work_buf_min_days>
       <work_buf_additional_days>0.25</work_buf_additional_days>
