@@ -57,6 +57,26 @@ Primary Proxmox host — runs master-1, the Rocky workers, and ubuntu24-gpu-box 
   870 EVO SATA SSD (Proxmox OS on `local-lvm`, plus master-1's 150 G Ceph OSD
   disk — moved off the NVMe 2026-07-07 for drive-level Ceph redundancy)
 
+##### Fan control (IPMI)
+
+After a reboot (or iDRAC reset) the R720 loses its manual fan override and the
+fans go back to loud auto mode. Re-apply on the host as root (`apt install ipmitool` once):
+
+```bash
+ipmitool raw 0x30 0x30 0x01 0x00        # enable manual fan control
+ipmitool raw 0x30 0x30 0x02 0xff 0x14   # fans to 20% (quiet — fine at idle, CPUs ~42 °C)
+ipmitool raw 0x30 0x30 0x02 0xff 0x1e   # or 30% if temps creep up under sustained load
+```
+
+- Speed = last byte in hex: `0x14` 20%, `0x1e` 30%, `0x28` 40%.
+- Back to automatic (loud) control: `ipmitool raw 0x30 0x30 0x01 0x01`
+- Check temps after changing: `ipmitool sdr type temperature` — the two bare
+  `Temp` sensors are the CPUs; bump to 30% if they hit the mid-70s °C.
+- The override does **not** survive reboots/iDRAC resets — rerun after every
+  reboot (or wire it into a systemd unit).
+- If ipmitool says `Could not open device at /dev/ipmi0`:
+  `modprobe ipmi_devintf ipmi_si` (add both to `/etc/modules` to persist).
+
 #### `Old Desktop` — Gigabyte B450M DS3H · `.9`
 <details><summary>Old Desktop Photo</summary>
 <img src="docs/images/old-desktop.jpg" width="400" alt="Old Desktop">
