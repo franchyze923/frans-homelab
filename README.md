@@ -131,11 +131,38 @@ Hosts `mac-m1-worker`, the cluster's only **arm64** node (tainted
 `arch=arm64:NoSchedule` — see the next table), as a nested Ubuntu VM. Physical
 Mac specs (total RAM/storage, macOS version) not yet inventoried; figures
 below are what the guest VM reports to Kubernetes, not the host machine's
-full hardware.
+full hardware. **Rebuilt 2026-09-05** — the Mac mini was factory-reset,
+destroying the original VM (see runbook below).
 
-- **vCPU / RAM (VM):** 6 vCPU / ~5.3 GiB allocatable
-- **OS (VM):** Ubuntu 26.04 LTS (kernel 7.0.0-27-generic), containerd 2.2.2
-- **Storage (VM):** ~62 GB ephemeral
+- **vCPU / RAM (VM):** 2 vCPU / 3.3 GiB (downsized from 6 vCPU / ~5.3 GiB on
+  rebuild — bump if boinc-arm + media-reencode-arm get cramped)
+- **OS (VM):** Ubuntu 26.04.1 LTS (kernel 7.0.0-31-generic), containerd 2.2.2
+- **IP (VM):** `.168`, SSH `fran@` (passwordless sudo)
+
+##### Runbook: rebuild the M1 worker VM
+
+The whole node is disposable — no Ceph OSD/mon, no local state worth keeping —
+so a Mac reset just means: new VM, prep, rejoin. ~10 minutes.
+
+1. **New VM** on the Mac (bridged networking so it gets its own `192.168.40.x`;
+   set it to auto-start with macOS): Ubuntu Server **arm64**, hostname
+   **`mac-m1-worker`** — reusing the exact hostname lets `kubeadm join` re-adopt
+   the existing Node object, keeping its `m1worker` role label and
+   `arch=arm64:NoSchedule` taint for free.
+2. **Prep** — run [`cluster/k8s-worker-prep.sh`](cluster/k8s-worker-prep.sh) as
+   root on the VM: swap/zram off, `rbd`/`br_netfilter`/`overlay` modules,
+   sysctls, nfs-common, containerd (`SystemdCgroup=true`), and
+   kubelet/kubeadm/kubectl pinned + held at the **cluster's version** (edit
+   `K8S_VER` at the top to match before running).
+3. **Join** — token from a master (SSH user is `rocky`):
+   `ssh rocky@192.168.40.172 'kubeadm token create --print-join-command'`,
+   run the printed command with sudo on the VM (it targets the VIP `.171`).
+4. **Uncordon** if the old Node object was left cordoned while down:
+   `kubectl uncordon mac-m1-worker`. If the old Node was instead *deleted*,
+   re-apply identity: `kubectl label node mac-m1-worker node-role.kubernetes.io/m1worker=`
+   and `kubectl taint node mac-m1-worker arch=arm64:NoSchedule`.
+5. **Verify** — node Ready, `boinc-arm-0` and the rook-ceph CSI plugin pods
+   Running on it, Ceph still `HEALTH_OK`.
 
 #### `fran-lenovo-rocky-9 devbox` — Lenovo ThinkCentre M710q (10MR0004US) · `.192`
 <details><summary>Devbox Photo</summary>

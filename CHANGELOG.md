@@ -4,6 +4,36 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-09-05
+
+### mac-m1-worker rebuilt after Mac mini factory reset; new worker-prep script + runbook
+The Mac mini was factory-reset, destroying the nested Ubuntu VM that had
+been `mac-m1-worker` (NotReady since 2026-09-01). Rebuilt as Ubuntu 26.04.1
+arm64 at `.168` (2 vCPU / 3.3 GiB — smaller than the old 6 vCPU / ~5.3 GiB;
+bump later if the arm workloads get cramped), prepped with the new
+`cluster/k8s-worker-prep.sh` (extracted from the desktop-node recipe:
+swap/zram off, rbd/br_netfilter/overlay, containerd SystemdCgroup, kube*
+pinned 1.35.6), and rejoined via the VIP. Reusing the exact hostname let
+kubeadm re-adopt the old Node object — m1worker label and
+`arch=arm64:NoSchedule` taint survived; just needed `kubectl uncordon`.
+Runbook now in README under the M1 Mac Mini host entry. boinc-arm-0 and the
+node's rook-ceph CSI pods rescheduled cleanly; Ceph HEALTH_OK.
+
+### Old Desktop outage took out a third of the cluster for ~24h
+The B450M host (`.9`) went down ~2026-09-04 12:00 UTC (same window the pve
+R720 was rebooted), taking `ubuntu-26-desktop-node` + `k8s-cp-old-ryzen-node`
+with it — control plane ran 2/3, and everything scheduled on desktop-node
+(immich-server, sonarr, sabnzbd, navidrome, metube, wavelog, hamclock,
+strava-globe, boinc-0) was down until the host was powered back on
+2026-09-05. Recovery was fully automatic but slow-tailed: rescheduled pods
+sat in Init/`Multi-Attach`/"rbd image still being used" for a few minutes
+until the returned node's csi-rbdplugin registered and the kubelet cleaned
+the orphaned RBD mappings, releasing the watchers. Immich came back first
+(its Deployment was recreated via Argo sync, landing on ubuntu24-gpu-box).
+Leftover cosmetic damage from the R720 reboot itself: Failed pod husks
+(`UnexpectedAdmissionError`/`ContainerStatusUnknown`) for the GPU apps —
+real replicas were fine throughout; husks deleted by hand.
+
 ## 2026-08-20
 
 ### Keycloak: 5-minute ArgoCD logouts — realm access-token lifespan 5 min → 12 h
