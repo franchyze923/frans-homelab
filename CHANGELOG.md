@@ -4,6 +4,18 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-09-14
+
+### Immich: v3.1.0 → v3.2.1
+Minor + patch release (v3.2.0 released 2026-09-10, v3.2.1 today). Release
+notes checked first: no breaking changes, no postgres/vectorchord image
+bump required. Bumped `immich-server` + `immich-machine-learning` (`-cuda`)
+together, per the pin-both-together rule. Manual DB backup taken
+immediately before (`immich-db-backup-pre-v321` job from the CronJob).
+Note for next time: deleting the pod does not pull a new version — the tag
+is pinned in `immich.yaml`, so `IfNotPresent` vs `Always` is irrelevant;
+the manifest tag has to change and ArgoCD rolls it out.
+
 ## 2026-09-05
 
 ### mac-m1-worker rebuilt after Mac mini factory reset; new worker-prep script + runbook
