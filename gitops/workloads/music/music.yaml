@@ -353,7 +353,7 @@ spec:
             - name: spotdl
               # custom image: official one is musl-based and crashes in
               # tls_client — see Dockerfile in this directory
-              image: franchyze923/spotdl:4.5.0
+              image: franchyze923/spotdl:4.5.2
               command:
                 - sh
                 - -c
