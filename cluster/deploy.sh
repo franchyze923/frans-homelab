@@ -346,7 +346,7 @@ if [ "$TLS_ENABLED" = "true" ] && [ -n "$DOMAIN" ] && [ -n "$CLOUDFLARE_API_TOKE
 
     # --- cert-manager ---
     echo "Installing cert-manager..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.4/cert-manager.yaml
 
     # Force DNS-01 self-checks to use public recursive resolvers instead of the
     # default authoritative-nameserver walk. The home network's local DNS can hold
