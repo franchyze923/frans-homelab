@@ -76,9 +76,16 @@ spec:
                   set -euo pipefail
                   ts=$(date -u +%Y%m%dT%H%M%S)
                   out=/backup/immich-db-backup-${ts}.sql.gz
+                  # dump to .partial and rename only on success: a failed attempt must
+                  # never leave a *.sql.gz behind, or empty stubs count toward the
+                  # keep-7 retention below and push out the real dumps
+                  tmp=${out}.partial
+                  rm -f /backup/immich-db-backup-*.sql.gz.partial   # leftovers from killed runs
+                  trap 'rm -f "$tmp"' EXIT
                   echo "[$(date -u +%H:%M:%S)] pg_dumpall immich DB -> $out"
                   # pipefail makes the job FAIL if pg_dumpall errors (not just gzip)
-                  pg_dumpall --clean --if-exists -U postgres -h immich-postgres | gzip > "$out"
+                  pg_dumpall --clean --if-exists -U postgres -h immich-postgres | gzip > "$tmp"
+                  mv "$tmp" "$out"
                   echo "--> backed up to: 192.168.40.116:/mnt/user/FranData/FranArchives/k8s-pvs/immich/$(basename "$out") ($(du -h "$out" | cut -f1))"
                   # retention: keep the 7 most recent
                   ls -1t /backup/immich-db-backup-*.sql.gz | tail -n +8 | xargs -r rm -f

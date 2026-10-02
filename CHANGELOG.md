@@ -21,6 +21,14 @@ Each failed attempt left a 20-byte empty `.sql.gz` on the NAS, and those
 stubs count toward the keep-7 retention, so the next successful run (the
 pre-bump one) pruned the older good dumps — only today's dump remains.
 
+### Immich DB backup: failed runs no longer leave stub dumps
+Fix for the retention problem above. `immich-db-backup` now dumps to
+`<name>.sql.gz.partial` and renames to `.sql.gz` only after `pg_dumpall`
+succeeds; an EXIT trap removes the partial on failure, and each run clears
+partials left by killed runs. Failed attempts therefore never match the
+retention glob, so keep-7 only ever counts real dumps. The six 20-byte
+stubs from the failed 03:00 run were deleted from the NAS by hand.
+
 ## 2026-09-14
 
 ### Immich: v3.1.0 → v3.2.1
