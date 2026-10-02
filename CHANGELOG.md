@@ -4,6 +4,23 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-10-02
+
+### Immich: v3.2.1 → v3.2.4
+Patch releases only (v3.2.2 reassign-faces fix; v3.2.3 was a sacrificed
+release; v3.2.4 base-image update that fixes the reported memory leak, plus
+a mobile sync-status fix). v3.3.0 is still RC, so not taken. Release notes
+checked first: no breaking changes, no postgres/vectorchord image bump
+required. Bumped `immich-server` + `immich-machine-learning` (`-cuda`)
+together, per the pin-both-together rule. Manual DB backup taken
+immediately before (`immich-db-backup-pre-v324` job from the CronJob).
+Found along the way: the 03:00 UTC nightly backup had failed
+(BackoffLimitExceeded) because `immich-postgres` was not up overnight — pod
+created 2026-10-01 21:02 UTC, container only started 2026-10-02 11:03 UTC.
+Each failed attempt left a 20-byte empty `.sql.gz` on the NAS, and those
+stubs count toward the keep-7 retention, so the next successful run (the
+pre-bump one) pruned the older good dumps — only today's dump remains.
+
 ## 2026-09-14
 
 ### Immich: v3.1.0 → v3.2.1
