@@ -15,7 +15,12 @@ Login via Keycloak (client below) or built-in users (`python -m app.users`
 inside the pod). ArgoCD app `weekly-sitrep` → `gitops/workloads/weekly-sitrep`.
 Image `franchyze923/weekly-sitrep:latest` (also tagged `0.1.0`), built and
 pushed by hand like the other custom apps. Secret `weekly-sitrep-oidc`
-(SESSION_SECRET + OIDC_CLIENT_SECRET) applied out-of-band.
+(SESSION_SECRET + OIDC_CLIENT_SECRET) applied out-of-band. First rollout
+crash-looped with `unable to open database file`: the image runs as uid
+10001 (non-root, unlike the other custom apps) and a fresh RBD volume is
+root-owned; fixed with pod `securityContext` runAsUser/runAsGroup/fsGroup
+10001. Verified: `/healthz` reports v0.1.0 build f8e2e52 over TLS, OIDC
+redirect carries the production callback URL, ArgoCD Synced/Healthy.
 
 ### Keycloak: new `weekly-sitrep` OIDC client
 Registered a confidential client `weekly-sitrep` in realm `homelab` for the
