@@ -38,6 +38,12 @@ spec:
       labels:
         app: weekly-sitrep
     spec:
+      # Image runs as uid 10001 (non-root); fsGroup makes the fresh RBD
+      # volume at /data writable by it.
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: app
           image: franchyze923/weekly-sitrep:latest
