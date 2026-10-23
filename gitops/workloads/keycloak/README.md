@@ -34,8 +34,9 @@ in each consumer's out-of-band Secret:
 | `gitea` | auth source in Gitea DB (`gitea admin auth list`) | in Gitea's DB |
 | `immich` | system config via Immich admin API/UI | in Immich's DB |
 | `open-webui` | env in `workloads/open-webui/open-webui.yaml` | `openwebui-oidc` in ns `open-webui` |
+| `weekly-sitrep` | env in `workloads/weekly-sitrep/` (not yet deployed; also allows `http://localhost:8000/auth/callback` for local dev) | `weekly-sitrep-oidc` in ns `weekly-sitrep` |
 
-On a Keycloak rebuild: recreate realm `homelab`, user `fran`, and the five
+On a Keycloak rebuild: recreate realm `homelab`, user `fran`, and the six
 clients (redirect URIs are `https://<app hostname>/<provider callback>`; the
 `argocd` client additionally allows `http://localhost:8085/auth/callback` for
 the CLI and `argocd://auth/callback` for the mobile app, and is a **public**

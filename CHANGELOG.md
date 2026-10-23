@@ -4,6 +4,29 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-10-22
+
+### New app: weekly-sitrep (`sitrep.franpolignano.com`)
+Weekly project status reports: one page per week, a card per project with
+raw bullets on the left and an executive summary on the right, who-has-
+reported progress bar, copy-to-clipboard. LLM summarizer is still a
+placeholder. FastAPI + HTMX, SQLite on a 1 Gi Ceph RBD PVC, single replica.
+Login via Keycloak (client below) or built-in users (`python -m app.users`
+inside the pod). ArgoCD app `weekly-sitrep` → `gitops/workloads/weekly-sitrep`.
+Image `franchyze923/weekly-sitrep:latest` (also tagged `0.1.0`), built and
+pushed by hand like the other custom apps. Secret `weekly-sitrep-oidc`
+(SESSION_SECRET + OIDC_CLIENT_SECRET) applied out-of-band.
+
+### Keycloak: new `weekly-sitrep` OIDC client
+Registered a confidential client `weekly-sitrep` in realm `homelab` for the
+new weekly project status app (repo `weekly-sitrep`, not yet deployed).
+Standard flow only; redirect URIs `https://sitrep.franpolignano.com/auth/callback`
+and `http://localhost:8000/auth/callback` (the latter for local OIDC testing
+against the real realm). Created via the admin REST API. Client secret lives
+in Keycloak (Clients → weekly-sitrep → Credentials) and, once deployed, in
+the out-of-band Secret `weekly-sitrep-oidc` (ns `weekly-sitrep`). Added to
+the SSO client table in `gitops/workloads/keycloak/README.md`.
+
 ## 2026-10-02
 
 ### Immich: v3.2.1 → v3.2.4
