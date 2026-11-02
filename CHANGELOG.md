@@ -4,6 +4,19 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-11-02
+
+### k9s 0.50.18 -> 0.51.0 on the admin host + `update-k9s.sh`
+k9s on the kubectl/argocd admin box was a hand-installed release RPM
+(`@@commandline`), so dnf never saw updates for it. Bumped to 0.51.0 by
+hand (download RPM + `checksums.sha256`, `sha256sum -c`, `dnf upgrade` on
+the local file). Wrapped the same steps in
+[`gitops/scripts/update-k9s.sh`](gitops/scripts/README.md) (`--check`,
+`--force`, pin a tag). Looked at COPR as a repo-based alternative:
+`emanuelec/k9s` is the only EL9 build that tracks upstream (0.51.0 within
+days; `luminoso/k9s` stale at 0.50.11, `che/k9s` dead since 2023) but
+decided to stay on the project's own artifacts for now.
+
 ## 2026-10-22
 
 ### New app: weekly-sitrep (`sitrep.franpolignano.com`)

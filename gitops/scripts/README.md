@@ -117,3 +117,32 @@ card is a strict upgrade over the other for this workload -- capability
 coverage and raw speed favor different cards.
 
 If a playlist already exists on the destination, the tool will only add missing tracks (no duplicates).
+
+---
+
+# k9s updater
+
+`update-k9s.sh` — one-shot updater for `k9s` on an RPM host where it was
+installed from a downloaded release RPM rather than a repo (dnf shows it as
+`@@commandline`, so nothing ever pulls updates for it). Built 2026-11-02
+after a manual 0.50.18 → 0.51.0 bump; a COPR repo (`emanuelec/k9s`) was
+considered and rejected in favour of staying on the project's own release
+artifacts with no third-party trust.
+
+What it does: looks up the latest tag via the GitHub API, exits early if
+already current, downloads the RPM plus `checksums.sha256` from the
+release, verifies with `sha256sum -c`, then `sudo dnf install`s the local
+file so the rpm database stays accurate (deliberately not `rpm -i`).
+Detects `x86_64`/`aarch64`.
+
+## Usage
+
+```sh
+./update-k9s.sh            # upgrade to latest if newer
+./update-k9s.sh --check    # just report installed vs latest, no changes
+./update-k9s.sh v0.51.0    # pin a specific release tag
+./update-k9s.sh --force    # reinstall even if versions match
+```
+
+Everything before the `dnf` step runs unprivileged; only the final install
+prompts for sudo.
