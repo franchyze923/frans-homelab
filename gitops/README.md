@@ -91,7 +91,7 @@ backups (anything too big or recreatable to keep on Ceph).
 | `nvidia-device-plugin` | Exposes the Tesla P4 to pods; **time-sliced** so ollama + Plex + Frigate share it |
 | `nfs-provisioner` | Dynamic NFS PV provisioning |
 | `nfs-mount-healer` | Restarts pods whose Unraid NFS mount goes stale (ESTALE) |
-| `keycloak` | SSO / identity provider |
+| `keycloak` | SSO / identity provider ([how the auth flow works](workloads/keycloak/README.md#how-it-works-plain-english-refresher)) |
 | `gitea` | Self-hosted git |
 | `monitoring-namespace` | Owns the shared `monitoring` namespace |
 

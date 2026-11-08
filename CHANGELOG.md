@@ -6,6 +6,18 @@ forward, every change gets an entry here.
 
 ## 2026-11-08
 
+### keycloak: plain-English auth-flow explainer + diagram in the README
+Added a "How it works" section to `gitops/workloads/keycloak/README.md` for
+re-reading after time away: OIDC vocabulary mapped to this lab (realm
+`homelab`, the six clients, discovery URL, the auth/token/userinfo
+endpoints, ID/access/refresh tokens, the Keycloak-side SSO cookie and the
+12 h / 14 d / 30 d lifespans), a Mermaid sequence diagram of the
+Authorization Code flow using Grafana as the worked example, a per-app
+table of how each client learns about Keycloak and its callback path
+(verified against the live clients via the admin API), and a short
+"when it breaks, look here" list. Linked from the gitops README app table.
+Docs only, no cluster change.
+
 ### Immich: v3.2.4 → v3.3.6
 Minor + five patch releases (v3.3.0 released 2026-10-07; v3.3.6 on
 2026-11-04; v3.3.2 was a sacrificed release). v3.4.0 is still RC, so not

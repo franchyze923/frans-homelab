@@ -4,6 +4,102 @@ Keycloak 26 (pinned) at `keycloak.franpolignano.com` — the homelab's SSO
 identity provider. Realm **`homelab`**, user **`fran`**. Data on Ceph with the
 standard nightly NFS backup.
 
+## How it works (plain-English refresher)
+
+Keycloak is the one place in the lab that knows who you are. Every app that
+supports SSO (ArgoCD, Grafana, Gitea, Immich, Open WebUI, weekly-sitrep) is
+configured to **not** have its own login; instead it hands you to Keycloak,
+Keycloak checks your password, and then tells the app "this is
+`franpolignano@gmail.com`" in a signed message the app can trust. The protocol
+is **OpenID Connect (OIDC)**, which is OAuth 2.0 plus an identity layer. The
+specific variant every app here uses is the **Authorization Code flow**.
+
+### Vocabulary, mapped to this lab
+
+| Term | What it means here |
+|---|---|
+| **Identity provider (IdP)** | Keycloak at `https://keycloak.franpolignano.com` |
+| **Realm** | A self-contained user database + settings. `homelab` holds user `fran` and all six app clients. `master` is only for Keycloak's own admin console. |
+| **Client** | One app registered in a realm. `grafana`, `argocd`, `gitea`, `immich`, `open-webui`, `weekly-sitrep`. Each has a client ID (public name) and usually a client secret (password the app proves itself with). |
+| **Redirect URI** | The app URL Keycloak is allowed to send you back to after login, e.g. `https://grafana.franpolignano.com/login/generic_oauth`. Registered per client so a stolen code can't be sent anywhere else. |
+| **Public vs confidential client** | `argocd` is **public** (no secret) so the CLI and mobile app, which can't keep a secret, can log in. All others are confidential. |
+| **Discovery URL** | `https://keycloak.franpolignano.com/realms/homelab/.well-known/openid-configuration`. A JSON document listing every endpoint below. Open WebUI and weekly-sitrep read this and need nothing else; Grafana has the three URLs spelled out in `grafana.yaml`. |
+| **`/auth` endpoint** | Where the browser is sent to log in: `.../realms/homelab/protocol/openid-connect/auth` |
+| **`/token` endpoint** | Where the *app* (server-side) swaps the one-time code for tokens: `.../protocol/openid-connect/token` |
+| **`/userinfo` endpoint** | Optional: app asks "who does this token belong to?" |
+| **ID token** | A signed JWT saying who logged in (`email`, `name`, `preferred_username`). The app reads this to create/match your account. |
+| **Access token** | Bearer token the app holds for the session. Realm-wide lifespan **12 h** (raised from 5 min because ArgoCD never refreshes). |
+| **Refresh token** | Lets the app silently get a new access token without a login prompt, as long as the Keycloak SSO session is alive. |
+| **SSO session** | A cookie **on the Keycloak domain**, not on each app. Idle **14 d**, max **30 d**. This is why logging into Grafana then opening ArgoCD skips the password prompt: ArgoCD redirects to Keycloak, Keycloak sees its own cookie, and bounces you straight back. |
+
+### The flow, using Grafana as the example
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You as Browser (fran)
+    participant G as Grafana<br/>grafana.franpolignano.com
+    participant K as Keycloak<br/>realm homelab
+
+    You->>G: Open Grafana, click "Sign in with Keycloak"
+    G-->>You: Redirect to Keycloak /auth<br/>client_id=grafana, redirect_uri=grafana/login/generic_oauth,<br/>scope=openid profile email, state=random
+    You->>K: GET /realms/homelab/protocol/openid-connect/auth
+    alt no Keycloak SSO cookie yet
+        K-->>You: Login page
+        You->>K: username + password (Keycloak checks it, never Grafana)
+    else already logged into another app today
+        K->>K: SSO cookie valid, skip login
+    end
+    K-->>You: Redirect back to redirect_uri with a one-time code
+    You->>G: GET /login/generic_oauth?code=...&state=...
+    G->>K: POST /token (server to server)<br/>code + client_id + client_secret from Secret grafana-oidc
+    K-->>G: ID token + access token + refresh token
+    G->>G: Read email from ID token,<br/>role_attribute_path: fran = Admin, anyone else = Viewer
+    G-->>You: Set Grafana session cookie. Logged in.
+```
+
+What to notice:
+
+- **Your password only ever goes to Keycloak** (step 5). Grafana never sees it.
+- **The browser only carries a short-lived code** (step 7). The real tokens
+  move server-to-server in step 9 and 10, which is why Grafana needs the
+  client secret and why that secret lives in the out-of-band `grafana-oidc`
+  Secret, not in git.
+- **Authorization is still the app's job.** Keycloak only says *who*. Each app
+  decides *what they can do*: Grafana via `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`
+  (email match → Admin), ArgoCD via `argocd-rbac-cm` (`g, franpolignano@gmail.com, role:admin`),
+  Gitea/Immich/Open WebUI by auto-creating an account on first login and
+  using their own per-user settings after that.
+- **Logging out of an app does not log you out of Keycloak.** The SSO cookie
+  keeps you signed in for the other apps until it idles out at 14 d, unless
+  the app also calls Keycloak's `/logout` endpoint.
+
+### Same flow, other apps
+
+| App | How the app is told about Keycloak | Where you land after login |
+|---|---|---|
+| ArgoCD | `argocd-cm` `oidc.config` (issuer + clientID), applied with kubectl | `https://argocd.franpolignano.com/auth/callback` (also `localhost:8085` for the CLI, `argocd://` for mobile) |
+| Grafana | `GF_AUTH_GENERIC_OAUTH_*` env in `grafana.yaml` | `/login/generic_oauth` |
+| Gitea | Auth source stored in Gitea's DB (`gitea admin auth list`) | `/user/oauth2/keycloak/callback` |
+| Immich | System config set via the admin API (`PUT /api/system-config`) | `/auth/login` (also `app.immich:///oauth-callback` for the mobile app) |
+| Open WebUI | `OPENID_PROVIDER_URL` = discovery URL, in `open-webui.yaml` | `/oauth/oidc/callback` |
+| weekly-sitrep | `OIDC_DISCOVERY_URL` in `weekly-sitrep.yaml` | `/auth/callback` |
+| keycloak-demo-app | Browser-only demo (`demo-app` client) that prints each step live. Open it when you want to *watch* the flow above happen. | `192.168.40.201:8086` |
+
+### When something breaks, where to look
+
+1. **"Invalid redirect URI"** on the Keycloak login page: the app's callback
+   URL is not in that client's *Valid redirect URIs* list in the admin console.
+2. **Login loops or "invalid client credentials"**: the client secret in the
+   app's out-of-band Secret no longer matches Keycloak (Clients → Credentials).
+3. **Logged out after exactly N minutes everywhere**: realm token/session
+   lifespans were reset (e.g. realm rebuild). Re-run the REST call in
+   [Realm session settings](#realm-session-settings-changed-2026-07-16-token-lifespan-2026-08-20).
+4. **Pods can't reach `keycloak.franpolignano.com`**: CoreDNS forward zone for
+   `franpolignano.com` → Pi-holes is missing (not in git; kubeadm upgrades can
+   drop it). The apps call Keycloak's public hostname from inside the cluster
+   in step 9, so cluster DNS must resolve it to the gateway.
+
 ## Secret (applied out-of-band, NOT in git)
 
 Bootstrap admin credentials live in Secret `keycloak-admin-creds` (only read
@@ -34,7 +130,7 @@ in each consumer's out-of-band Secret:
 | `gitea` | auth source in Gitea DB (`gitea admin auth list`) | in Gitea's DB |
 | `immich` | system config via Immich admin API/UI | in Immich's DB |
 | `open-webui` | env in `workloads/open-webui/open-webui.yaml` | `openwebui-oidc` in ns `open-webui` |
-| `weekly-sitrep` | env in `workloads/weekly-sitrep/` (not yet deployed; also allows `http://localhost:8000/auth/callback` for local dev) | `weekly-sitrep-oidc` in ns `weekly-sitrep` |
+| `weekly-sitrep` | env in `workloads/weekly-sitrep/weekly-sitrep.yaml` (client also allows `http://localhost:8000/auth/callback` for local dev) | `weekly-sitrep-oidc` in ns `weekly-sitrep` |
 
 On a Keycloak rebuild: recreate realm `homelab`, user `fran`, and the six
 clients (redirect URIs are `https://<app hostname>/<provider callback>`; the
