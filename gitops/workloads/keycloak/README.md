@@ -54,6 +54,10 @@ sequenceDiagram
     G-->>B: You are logged in as Admin
 ```
 
+Solid arrows are requests, dashed arrows are the replies. In the browser
+steps a "reply" is an HTTP redirect ("go to this other URL"), which is why the
+address bar visibly jumps between the two sites during login.
+
 Step by step, with the real names:
 
 1. You click "Sign in with Keycloak" on `grafana.franpolignano.com`.
