@@ -6,6 +6,31 @@ forward, every change gets an entry here.
 
 ## 2026-11-08
 
+### Updates: Open WebUI 0.9.6 → 0.13.2 (+ Ollama 0.34 → 0.40.15), Radarr 6.3.0 → 6.4.4, Lidarr 3.1.0 → 3.1.6, Sonarr 4.0.19 → 4.0.20, SABnzbd 5.1.3 base-image rebuild
+All five had been on the images pulled 2026-09-11. radarr/lidarr/sonarr/
+sabnzbd/ollama run floating `:latest` with `imagePullPolicy: Always`, so a
+`kubectl rollout restart` was the whole update (nightly config backups
+verified fresh first). **Open WebUI was different:** it ran the floating
+dev tag `:main` with the default `IfNotPresent`, so no restart would ever
+have re-pulled it -- pinned it to the release tag `v0.13.2` in
+`open-webui.yaml` instead (comment there says how to bump next time).
+0.10 → 0.13 carries two security advisories and several DB migrations; the
+`open-webui-data` PVC has **no backup CronJob**, so a manual tarball was
+taken first (`~/backups/open-webui-data-pre-v0.13.2-*.tgz`, 805M). All
+alembic migrations ran clean, OIDC provider still registered, Ollama
+models PVC untouched.
+
+**Found and fixed: RollingUpdate deadlock on single-replica apps.** sonarr,
+open-webui and ollama had no `strategy`, so the default RollingUpdate
+started the new pod before stopping the old one; when the scheduler put it
+on a different node it sat in `Multi-Attach` on the RWO Ceph PVC (sonarr,
+open-webui) or `Insufficient nvidia.com/gpu` (ollama) indefinitely, and
+deleting the old pod just made the old ReplicaSet recreate it on the node
+that holds the volume. Set `strategy: type: Recreate` on all three (radarr,
+lidarr, sabnzbd already had it; the rest of the single-replica RWO fleet
+should be audited the same way). Follow-up: give `open-webui-data` the
+standard nightly NFS backup CronJob like the *arr apps have.
+
 ### keycloak: plain-English auth-flow explainer + diagram in the README
 Added a "How it works" section to `gitops/workloads/keycloak/README.md` for
 re-reading after time away: OIDC vocabulary mapped to this lab (realm
