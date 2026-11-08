@@ -34,8 +34,14 @@ specific variant every app here uses is the **Authorization Code flow**.
 
 ### The flow, using Grafana as the example
 
-Six steps. The browser bounces between the two sites; the only thing it ever
-carries from Keycloak to Grafana is a one-time code.
+Two versions of the same picture. Read the simple one first; the detailed one
+has the real endpoints, the SSO-cookie shortcut, and where the secret and
+tokens travel.
+
+#### Simple
+
+The browser bounces between the two sites; the only thing it ever carries from
+Keycloak to Grafana is a one-time code.
 
 ```mermaid
 sequenceDiagram
@@ -57,6 +63,39 @@ sequenceDiagram
 Solid arrows are requests, dashed arrows are the replies. In the browser
 steps a "reply" is an HTTP redirect ("go to this other URL"), which is why the
 address bar visibly jumps between the two sites during login.
+
+#### Detailed
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant G as Grafana<br/>grafana.franpolignano.com
+    participant K as Keycloak<br/>keycloak.franpolignano.com<br/>realm: homelab
+
+    B->>G: GET /login, click "Sign in with Keycloak"
+    G-->>B: 302 to Keycloak /auth<br/>client_id=grafana<br/>redirect_uri=/login/generic_oauth<br/>scope=openid profile email<br/>state=random
+    B->>K: GET /realms/homelab/protocol/openid-connect/auth
+
+    alt No Keycloak SSO cookie
+        K-->>B: Login page
+        B->>K: POST username + password
+        K->>K: Verify, set SSO cookie<br/>(idle 14 d, max 30 d)
+    else SSO cookie already present
+        K->>K: Skip login
+    end
+
+    K-->>B: 302 to redirect_uri?code=ONE-TIME&state=...
+    B->>G: GET /login/generic_oauth?code=...&state=...
+    G->>G: Check state matches
+
+    G->>K: POST /token (server to server)<br/>grant_type=authorization_code<br/>code + client_id + client_secret<br/>(secret from k8s Secret grafana-oidc)
+    K-->>G: ID token (JWT: email, name)<br/>access token (12 h)<br/>refresh token
+
+    G->>G: email == franpolignano@gmail.com ? Admin : Viewer<br/>(GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH)
+    G-->>B: Set Grafana session cookie, 302 to /
+    Note over B,K: Later: Grafana silently uses the refresh token at /token<br/>while the Keycloak SSO session is alive. No login prompt.
+```
 
 Step by step, with the real names:
 
