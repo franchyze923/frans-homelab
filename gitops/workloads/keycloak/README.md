@@ -97,7 +97,7 @@ sequenceDiagram
     Note over B,K: Later: Grafana silently uses the refresh token at /token<br/>while the Keycloak SSO session is alive. No login prompt.
 ```
 
-Step by step, with the real names:
+Step by step, with the real names (numbers follow the **simple** diagram):
 
 1. You click "Sign in with Keycloak" on `grafana.franpolignano.com`.
 2. Grafana redirects you to Keycloak's `/auth` endpoint for realm `homelab`,
