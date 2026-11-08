@@ -34,37 +34,51 @@ specific variant every app here uses is the **Authorization Code flow**.
 
 ### The flow, using Grafana as the example
 
+Six steps. The browser bounces between the two sites; the only thing it ever
+carries from Keycloak to Grafana is a one-time code.
+
 ```mermaid
 sequenceDiagram
     autonumber
-    actor You as Browser (fran)
-    participant G as Grafana<br/>grafana.franpolignano.com
-    participant K as Keycloak<br/>realm homelab
+    participant B as Your browser
+    participant G as Grafana
+    participant K as Keycloak
 
-    You->>G: Open Grafana, click "Sign in with Keycloak"
-    G-->>You: Redirect to Keycloak /auth<br/>client_id=grafana, redirect_uri=grafana/login/generic_oauth,<br/>scope=openid profile email, state=random
-    You->>K: GET /realms/homelab/protocol/openid-connect/auth
-    alt no Keycloak SSO cookie yet
-        K-->>You: Login page
-        You->>K: username + password (Keycloak checks it, never Grafana)
-    else already logged into another app today
-        K->>K: SSO cookie valid, skip login
-    end
-    K-->>You: Redirect back to redirect_uri with a one-time code
-    You->>G: GET /login/generic_oauth?code=...&state=...
-    G->>K: POST /token (server to server)<br/>code + client_id + client_secret from Secret grafana-oidc
-    K-->>G: ID token + access token + refresh token
-    G->>G: Read email from ID token,<br/>role_attribute_path: fran = Admin, anyone else = Viewer
-    G-->>You: Set Grafana session cookie. Logged in.
+    B->>G: "Sign in with Keycloak"
+    G-->>B: Go to Keycloak (I am client "grafana")
+    B->>K: Log in with username + password
+    K-->>B: Done, go back to Grafana with this one-time code
+    B->>G: Here is the code
+    G->>K: Code + my client secret, who is this?
+    K-->>G: It is franpolignano@gmail.com (signed ID token)
+    G-->>B: You are logged in as Admin
 ```
+
+Step by step, with the real names:
+
+1. You click "Sign in with Keycloak" on `grafana.franpolignano.com`.
+2. Grafana redirects you to Keycloak's `/auth` endpoint for realm `homelab`,
+   saying: client `grafana`, send the user back to
+   `/login/generic_oauth` afterwards.
+3. Keycloak shows the login page and checks the password itself. Grafana never
+   sees it. **If you already logged into any other SSO app recently, this step
+   is skipped**: Keycloak sees its own SSO cookie and goes straight to step 4.
+4. Keycloak redirects you back to Grafana's callback URL with a one-time code.
+5. Your browser delivers the code to Grafana.
+6. Grafana, server to server, posts the code plus its client secret (from the
+   out-of-band Secret `grafana-oidc`) to Keycloak's `/token` endpoint.
+7. Keycloak answers with an ID token (who you are), an access token and a
+   refresh token.
+8. Grafana reads `email` from the ID token, applies its own rule
+   (`franpolignano@gmail.com` = Admin, anyone else = Viewer), and sets its own
+   session cookie.
 
 What to notice:
 
-- **Your password only ever goes to Keycloak** (step 5). Grafana never sees it.
-- **The browser only carries a short-lived code** (step 7). The real tokens
-  move server-to-server in step 9 and 10, which is why Grafana needs the
-  client secret and why that secret lives in the out-of-band `grafana-oidc`
-  Secret, not in git.
+- **Your password only ever goes to Keycloak** (step 3). Grafana never sees it.
+- **The browser only carries a short-lived code** (steps 4 and 5). The real
+  tokens move server-to-server in steps 6 and 7, which is why Grafana needs
+  the client secret and why that secret lives out-of-band, not in git.
 - **Authorization is still the app's job.** Keycloak only says *who*. Each app
   decides *what they can do*: Grafana via `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`
   (email match → Admin), ArgoCD via `argocd-rbac-cm` (`g, franpolignano@gmail.com, role:admin`),
