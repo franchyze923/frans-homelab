@@ -114,7 +114,11 @@ spec:
     spec:
       containers:
         - name: open-webui
-          image: ghcr.io/open-webui/open-webui:main
+          # Pinned to a release tag (was the floating dev tag `main`, which with
+          # the default IfNotPresent pull policy never re-pulled, so the pod sat on
+          # a stale build). Bump this tag to upgrade; check the release notes for
+          # "Database Migrations" and back up /app/backend/data first (no CronJob).
+          image: ghcr.io/open-webui/open-webui:v0.13.2
           ports:
             - containerPort: 8080
           env:
