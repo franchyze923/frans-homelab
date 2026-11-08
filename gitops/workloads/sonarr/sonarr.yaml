@@ -127,6 +127,11 @@ metadata:
   namespace: sonarr
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: single replica on an RWO Ceph volume (and, for
+  # ollama, the single GPU). A rolling update starts the new pod before the old
+  # one stops, and if it lands on another node it deadlocks on Multi-Attach.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sonarr
