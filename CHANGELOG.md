@@ -4,6 +4,26 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-11-08
+
+### Immich: v3.2.4 → v3.3.6
+Minor + five patch releases (v3.3.0 released 2026-10-07; v3.3.6 on
+2026-11-04; v3.3.2 was a sacrificed release). v3.4.0 is still RC, so not
+taken. Release notes checked first: no breaking changes, no
+postgres/vectorchord image bump required. Bumped `immich-server` +
+`immich-machine-learning` (`-cuda`) together, per the pin-both-together
+rule. Manual DB backup taken immediately before
+(`immich-db-backup-pre-v336` job from the CronJob, 583M dump on NFS). Also
+fixed the Immich README, which still said v3.0.1/v3.1.0 in two places.
+v3.3.0 highlights: shared people management, birthday memories,
+auto-stacked mobile edits, OAuth claims synced on every login, higher
+quality thumbnails (existing ones unchanged unless thumbnail generation is
+re-run for all assets), new PP-OCRv6 models. Not taken yet: the opt-in
+`MACHINE_LEARNING_MODEL_REVISION=v2` optimized ML models (same outputs,
+faster, less memory -- worth trying for the P4 VRAM creep that the
+ml-healer papers over; first model load is slower). TensorRT RTX only
+applies to Ampere+ GPUs, so not relevant to the Pascal P4.
+
 ## 2026-11-02
 
 ### k9s 0.50.18 -> 0.51.0 on the admin host + `update-k9s.sh`

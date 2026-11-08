@@ -1,6 +1,6 @@
 # immich
 
-Self-hosted photo/video backup (Immich **v3.0.1**), deployed fresh in-cluster.
+Self-hosted photo/video backup (Immich **v3.3.6**), deployed fresh in-cluster.
 
 ## Components
 - `immich-server` — API + web UI (`:2283`)
@@ -214,6 +214,6 @@ deployment). Tune `WINDOW`/`THRESHOLD` via the CronJob env.
 ## Notes
 - Machine-learning URL defaults to `http://immich-machine-learning:3003` — the
   service is named to match, so no extra config needed.
-- Image versions are pinned to `v3.1.0`; bump server + ML together when upgrading
+- Image versions are pinned to `v3.3.6`; bump server + ML together when upgrading
   (and check the release notes for DB image changes). The Postgres/VectorChord
   image tag is independent and only needs bumping if Immich's docs call for it.
