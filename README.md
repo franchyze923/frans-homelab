@@ -365,6 +365,7 @@ GitOps layer comes up on its own.
 ---
 
 ## Deploy / change apps (GitOps)
+
 > **SSO / Keycloak:** how the login flow works, with a diagram and every app's
 > callback: [`gitops/workloads/keycloak/README.md`](gitops/workloads/keycloak/README.md#how-it-works-plain-english-refresher).
 
