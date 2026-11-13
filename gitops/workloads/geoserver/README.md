@@ -103,6 +103,10 @@ Getting the GPX files out of Strava:
 
 ## Daily API sync (`strava-sync.yaml`)
 
+> **Disabled 2026-11-12.** Strava moved API access behind a paid plan and the
+> sync was failing with HTTP 403, so the CronJob is suspended (`suspend: true`).
+> The rest of this section describes how it worked and how to bring it back.
+
 CronJob `strava-sync` (16:00 America/New_York) pulls new activities from the
 Strava API into two tables (full-res GPS from the streams API; trainer/manual
 rides get the summary polyline or a NULL geom):

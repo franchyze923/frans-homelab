@@ -232,6 +232,9 @@ metadata:
   name: strava-sync
   namespace: geoserver
 spec:
+  # DISABLED 2026-11-12: Strava changed its API terms (paid access) and every
+  # run was failing with HTTP 403. Set back to false to re-enable.
+  suspend: true
   schedule: "0 * * * *"
   timeZone: America/New_York
   concurrencyPolicy: Forbid
