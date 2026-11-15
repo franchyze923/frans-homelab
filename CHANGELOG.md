@@ -4,6 +4,27 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-11-15
+
+### Immich: v3.3.6 → v3.4.1
+Minor + one patch release (v3.4.0 released 2026-11-10, v3.4.1 on
+2026-11-11). Release notes checked first: no breaking changes, no
+postgres/vectorchord image bump required (reference compose still on
+`14-vectorchord0.4.3-pgvectors0.2.0`, valkey 9). Bumped `immich-server` +
+`immich-machine-learning` (`-cuda`) together, per the pin-both-together
+rule. Manual DB backup taken immediately before
+(`immich-db-backup-pre-v341` job from the CronJob, 583M dump on NFS).
+v3.4.0 highlights: a batch of 16 security fixes (shared-link metadata and
+album-member exposure, partner timeline/locked-asset scoping, OAuth state
+cookies, symlink following, CSP no longer ships `unsafe-inline`), JPEG XL
+support, tags on mobile, workflow `missing`/`present` EXIF match types plus
+an OCR trigger and OCR text filter, de-duplicated camera make/model
+display, faster album and shared-link queries. v3.4.1 fixes the
+shared-link performance regression and the Prometheus exporter bind
+address. Still not taken: `MACHINE_LEARNING_MODEL_REVISION=v2` -- now the
+default in the upstream compose file, but it is an env var and unset here,
+so ML stays on the v1 models.
+
 ## 2026-11-08
 
 ### Updates: Open WebUI 0.9.6 → 0.13.2 (+ Ollama 0.34 → 0.40.15), Radarr 6.3.0 → 6.4.4, Lidarr 3.1.0 → 3.1.6, Sonarr 4.0.19 → 4.0.20, SABnzbd 5.1.3 base-image rebuild
