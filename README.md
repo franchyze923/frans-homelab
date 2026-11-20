@@ -226,6 +226,48 @@ runs `useAllNodes/useAllDevices: true` — any empty raw disk attached to any
 node becomes an OSD automatically. **Managed out-of-band** (not in Git) —
 runbook in [`gitops/README.md`](gitops/README.md).
 
+### Windows desktop
+
+The daily-driver gaming / desktop PC — **not a cluster member** and not a lab
+host; it's the machine the lab gets managed *from* (Parsec in, SSH out). Lives
+here so the exact parts are written down somewhere. Inventoried locally with
+PowerShell/CIM, 2026-11-20.
+
+#### `FRANS-WIN-PC-24` — ASUS PRIME B550M-A
+<!-- <details><summary>Windows Desktop Photo</summary>
+<img src="docs/images/windows-desktop.jpg" width="400" alt="Windows desktop">
+</details> -->
+
+- **CPU:** Ryzen 5 5600 — 6c / 12t @ 3.5–4.4 GHz (Zen 3, AM4, 65 W)
+- **RAM:** 32 GB DDR4 — 2× 16 GB G.Skill F4-3200C16-16GVK in A2/B2 (4 slots,
+  max 128 GB). Rated DDR4-3200 but **running at 2133 MT/s** — DOCP/XMP is not
+  enabled in BIOS
+- **GPU:** AMD Radeon RX 6700 XT — 12 GB GDDR6, Adrenalin 26.11.2 (driver
+  32.0.21045.29003). A Parsec Virtual Display Adapter is also installed for
+  headless remote sessions
+- **Board / BIOS:** ASUS PRIME B550M-A (micro-ATX), AMI BIOS 3611 (2024-09-28)
+- **Storage:** 1 TB Samsung 970 EVO Plus NVMe (932 GiB, single NTFS `C:`) — the
+  only drive
+- **Displays:** Acer EI322QUR — 2560×1440 @ 165 Hz over DisplayPort (primary) +
+  HP E24 G4 — 1920×1080 @ 60 Hz over HDMI (secondary)
+- **Network:** Realtek PCIe GbE — 1 Gbps wired, no Wi-Fi. Bluetooth via an ASUS
+  USB-BT400 dongle. Hyper-V is enabled (Default Switch present)
+- **OS:** Windows 11 Pro 26H2 (build 26300.9974)
+
+##### Display tuning (MPO)
+
+Video in Chrome flickered on the 165 Hz Acer until **multiplane overlays
+(MPO)** were disabled on 2026-11-20 — a known Adrenalin + Windows 11
+interaction, not a hardware fault. Re-apply from an *elevated* PowerShell if a
+driver or Windows update resets it:
+
+```powershell
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Dxgkrnl' -Name OverlayTestMode -PropertyType DWord -Value 5 -Force
+```
+
+- Takes effect after a reboot (or sign-out).
+- Undo: `Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Dxgkrnl' -Name OverlayTestMode`.
+
 ### Misc tech
 
 The tinkering side of the lab — radios, SBCs, and microcontrollers. This is the
