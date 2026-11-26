@@ -4,6 +4,18 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-11-25
+
+### Immich: v3.4.1 → v3.4.2
+Patch release (2026-11-18), bug fixes only: CSP hashes for external
+styles, integrity-report downloads, Prometheus exporter listening,
+VAAPI `range=pc` dropped, a few web UI fixes. Release notes checked: no
+breaking changes, no postgres/vectorchord image bump (reference compose
+still on `14-vectorchord0.4.3-pgvectors0.2.0`, valkey 9). Bumped
+`immich-server` + `immich-machine-learning` (`-cuda`) together. Manual DB
+backup taken immediately before (`immich-db-backup-pre-v342` job from the
+CronJob, 583M dump on NFS).
+
 ## 2026-11-15
 
 ### Immich: v3.3.6 → v3.4.1
