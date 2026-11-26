@@ -93,6 +93,7 @@ backups (anything too big or recreatable to keep on Ceph).
 | `nfs-mount-healer` | Restarts pods whose Unraid NFS mount goes stale (ESTALE) |
 | `keycloak` | SSO / identity provider ([how the auth flow works](workloads/keycloak/README.md#how-it-works-plain-english-refresher)) |
 | `gitea` | Self-hosted git |
+| `forgejo` | Forgejo trial (Gitea fork), running alongside gitea |
 | `monitoring-namespace` | Owns the shared `monitoring` namespace |
 
 **Monitoring** (`monitoring` ns)
@@ -131,7 +132,7 @@ Apps are reachable two ways:
 - **Gateway hostnames** (`*.franpolignano.com`, TLS via the wildcard cert) —
   for web UIs, via `HTTPRoute` on `main-gateway` (`192.168.40.202`).
   e.g. `plex`, `jellyfin`, `radarr`, `sonarr`, `sabnzbd`, `grafana`,
-  `prometheus`, `gitea`, `keycloak`, `weight-dashboard`, `steps-dashboard`,
+  `prometheus`, `gitea`, `forgejo`, `keycloak`, `weight-dashboard`, `steps-dashboard`,
   `metube`, `tautulli`, `frigate`, `vaultwarden`.
 - **LoadBalancer IPs** (Cilium LB IPAM, pool `192.168.40.200-203`) — for direct
   `IP:port` access. Most share **`192.168.40.201`** via the
@@ -147,6 +148,7 @@ Apps are reachable two ways:
   | `192.168.40.201:8088` | python-demo |
   | `192.168.40.201:8086` | keycloak-demo-app |
   | `192.168.40.201:22` | gitea-ssh |
+  | `192.168.40.201:2222` | forgejo-ssh |
   | `192.168.40.202:80,443` | main-gateway |
   | `192.168.40.203:80` | open-webui |
 

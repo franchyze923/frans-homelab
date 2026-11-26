@@ -4,6 +4,19 @@ All notable changes to the homelab are recorded here — both **cluster**
 (provisioning, nodes, storage) and **GitOps** (apps). Newest first. Going
 forward, every change gets an entry here.
 
+## 2026-11-26
+
+### New app: forgejo (`forgejo.franpolignano.com`) -- trial
+Forgejo 17.0.2 (`codeberg.org/forgejo/forgejo`, pinned) deployed alongside
+gitea to try it out. ArgoCD Application `gitops/apps/forgejo.yaml`, workload
+in `gitops/workloads/forgejo/`: namespace, 5 Gi RBD PVC (`forgejo-data`),
+Deployment (Recreate, sqlite), Service, HTTPRoute on `main-gateway`, and
+`forgejo-ssh` LoadBalancer on the shared `192.168.40.201` at port **2222**
+(gitea keeps 22). Install wizard skipped (`INSTALL_LOCK`) and registration
+disabled; admin user created via CLI, credentials in
+`cluster/forgejo-credentials.txt` (gitignored). No NFS backup CronJob yet --
+add one before keeping anything here that lives nowhere else.
+
 ## 2026-11-25
 
 ### New app: gift-list (`gift-list.franpolignano.com`)

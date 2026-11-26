@@ -1,0 +1,133 @@
+# Forgejo -- trial deployment alongside Gitea (2026-11-26). Mirrors the gitea
+# workload, minus the nightly NFS backup: add one before keeping real repos here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+---
+# Repos + sqlite DB + app.ini.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-data
+  namespace: forgejo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce and sqlite wants a single writer.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo
+  template:
+    metadata:
+      labels:
+        app: forgejo
+    spec:
+      containers:
+        - name: forgejo
+          # Pinned: forgejo runs one-way DB migrations; bump deliberately.
+          image: codeberg.org/forgejo/forgejo:17.0.2
+          ports:
+            - containerPort: 3000
+              name: http
+            - containerPort: 22
+              name: ssh
+          env:
+            - name: FORGEJO__database__DB_TYPE
+              value: sqlite3
+            - name: FORGEJO__server__DOMAIN
+              value: forgejo.franpolignano.com
+            - name: FORGEJO__server__ROOT_URL
+              value: https://forgejo.franpolignano.com/
+            # SSH is published on 2222 (gitea owns 192.168.40.201:22).
+            - name: FORGEJO__server__SSH_DOMAIN
+              value: forgejo.franpolignano.com
+            - name: FORGEJO__server__SSH_PORT
+              value: "2222"
+            # Skip the web install wizard; the admin user is created with
+            # `forgejo admin user create` (see README).
+            - name: FORGEJO__security__INSTALL_LOCK
+              value: "true"
+            - name: FORGEJO__service__DISABLE_REGISTRATION
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: forgejo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  type: ClusterIP
+  selector:
+    app: forgejo
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo-ssh
+  namespace: forgejo
+  annotations:
+    lbipam.cilium.io/sharing-key: "platform"
+    lbipam.cilium.io/sharing-cross-namespace: "*"
+spec:
+  type: LoadBalancer
+  selector:
+    app: forgejo
+  ports:
+    - name: ssh
+      port: 2222
+      targetPort: 22
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - forgejo.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: forgejo
+          port: 3000

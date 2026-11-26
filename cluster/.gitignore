@@ -32,6 +32,7 @@ postgis-credentials.txt
 strava-credentials.txt
 cesium-ion-token.txt
 wavelog-credentials.txt
+forgejo-credentials.txt
 
 # Deployment artifact backups
 deployments/
