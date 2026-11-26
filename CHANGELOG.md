@@ -6,6 +6,15 @@ forward, every change gets an entry here.
 
 ## 2026-11-25
 
+### Removed app: weekly-sitrep (`sitrep.franpolignano.com`)
+Deleted the ArgoCD Application (`gitops/apps/weekly-sitrep.yaml`) and its
+workload dir; app-of-apps prunes the Application and its finalizer cascades
+the namespace `weekly-sitrep` (Deployment, Service, HTTPRoute, 1 Gi RBD PVC,
+out-of-band Secret `weekly-sitrep-oidc`). SQLite DB (3 projects, 3 reports,
+0 users) copied off the PVC first to `~/backups/weekly-sitrep-2026-11-25/`
+on the admin host. Left in place: Keycloak client `weekly-sitrep` (realm
+`homelab`), the Docker Hub image, and the source repo.
+
 ### Immich: v3.4.1 → v3.4.2
 Patch release (2026-11-18), bug fixes only: CSP hashes for external
 styles, integrity-report downloads, Prometheus exporter listening,
