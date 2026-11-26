@@ -6,6 +6,17 @@ forward, every change gets an entry here.
 
 ## 2026-11-25
 
+### New app: gift-list (`gift-list.franpolignano.com`)
+Polignano family Christmas gift list (Flask/gunicorn + SQLite), image
+`franchyze923/gift-list:latest` built from the private `gift-list` repo.
+ArgoCD Application `gitops/apps/gift-list.yaml`, workload in
+`gitops/workloads/gift-list/`: namespace, 1 Gi RBD PVC (`gift-list-data`,
+holds `list.db`), Deployment (Recreate), Service, HTTPRoute on
+`main-gateway`. `FAMILY_PASSWORD` comes from an optional out-of-band Secret
+`gift-list-password` (not created; no prompt without it). Independent of
+the Fly.io copy at `wishlist.polignanofamily.com` -- separate database,
+starts empty.
+
 ### Removed app: weekly-sitrep (`sitrep.franpolignano.com`)
 Deleted the ArgoCD Application (`gitops/apps/weekly-sitrep.yaml`) and its
 workload dir; app-of-apps prunes the Application and its finalizer cascades

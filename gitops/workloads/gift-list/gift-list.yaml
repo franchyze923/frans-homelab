@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gift-list
+---
+# SQLite database (list.db). Ceph RBD block storage (RWO) -- single writer,
+# no NFS stale-handle risk. All gift data lives here, nothing in git.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gift-list-data
+  namespace: gift-list
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gift-list
+  namespace: gift-list
+  labels:
+    app: gift-list
+spec:
+  replicas: 1
+  # Recreate: data PVC is ReadWriteOnce and SQLite wants a single writer.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gift-list
+  template:
+    metadata:
+      labels:
+        app: gift-list
+    spec:
+      containers:
+        - name: gift-list
+          image: franchyze923/gift-list:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: DATA_DIR
+              value: /data
+            # Optional shared family password, from an out-of-band Secret
+            # (see README). Absent Secret = no password prompt.
+            - name: FAMILY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gift-list-password
+                  key: FAMILY_PASSWORD
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gift-list-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gift-list
+  namespace: gift-list
+  labels:
+    app: gift-list
+spec:
+  type: ClusterIP
+  selector:
+    app: gift-list
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gift-list
+  namespace: gift-list
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: gateway-system
+  hostnames:
+    - gift-list.franpolignano.com
+  rules:
+    - backendRefs:
+        - name: gift-list
+          port: 5000
